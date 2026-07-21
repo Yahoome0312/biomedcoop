@@ -1,0 +1,12 @@
+# Generated checkpoints, feature caches and prior experiment outputs.
+
+output/
+output_eval/
+caches/
+assets/
+
+# Python runtime artefacts.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
