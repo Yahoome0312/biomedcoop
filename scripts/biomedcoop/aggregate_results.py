@@ -106,12 +106,16 @@ def main():
     args = parser.parse_args()
 
     root = Path(args.output_root)
+    # Support both the upstream layout (root/dataset/shots_X) and the
+    # Windows reproduction driver's layout (root/shots_X).
+    dataset_root = root
+    if not any((root / "shots_{}".format(shots)).exists() for shots in args.shots):
+        dataset_root = root / args.dataset
     records = []
     for shots in args.shots:
         for seed in args.seeds:
             log_path = (
-                root
-                / args.dataset
+                dataset_root
                 / "shots_{}".format(shots)
                 / args.trainer
                 / "nctx4_cscFalse_ctpend"
@@ -163,7 +167,7 @@ def main():
             }
         grouped[str(shots)] = {"summary": summary, "classes": classes}
 
-    output = Path(args.output) if args.output else root / args.dataset / "metrics_summary.json"
+    output = Path(args.output) if args.output else dataset_root / "metrics_summary.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(grouped, indent=2, allow_nan=True), encoding="utf-8")
 
@@ -177,6 +181,9 @@ def main():
                     "scope": "overall",
                     "label": "",
                     "classname": "",
+                    "support": "",
+                    "correct_mean": "",
+                    "correct_std": "",
                     "metric": metric,
                     "mean": values["mean"],
                     "std": values["std"],
@@ -192,6 +199,9 @@ def main():
                         "scope": "class",
                         "label": label,
                         "classname": class_result["classname"],
+                        "support": class_result["support"],
+                        "correct_mean": class_result["correct"]["mean"],
+                        "correct_std": class_result["correct"]["std"],
                         "metric": metric,
                         "mean": values["mean"],
                         "std": values["std"],
