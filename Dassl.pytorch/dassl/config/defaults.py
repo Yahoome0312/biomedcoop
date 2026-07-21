@@ -90,6 +90,9 @@ _C.DATASET.ALL_AS_UNLABELED = False
 ###########################
 _C.DATALOADER = CN()
 _C.DATALOADER.NUM_WORKERS = 4
+# Keep workers alive across epochs when requested. This is especially useful
+# on Windows, where respawning workers every epoch is expensive.
+_C.DATALOADER.PERSISTENT_WORKERS = False
 # Apply transformations to an image K times (during training)
 _C.DATALOADER.K_TRANSFORMS = 1
 # img0 denotes image tensor without augmentation

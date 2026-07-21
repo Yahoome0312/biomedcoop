@@ -19,7 +19,11 @@ class _BaseWarmupScheduler(_LRScheduler):
     ):
         self.successor = successor
         self.warmup_epoch = warmup_epoch
-        super().__init__(optimizer, last_epoch, verbose)
+        # [Reproduction compatibility] PyTorch 2.8 removed the positional
+        # ``verbose`` argument from LRScheduler.__init__.  It is not used by
+        # this warmup wrapper, so omit it; this remains compatible with older
+        # PyTorch versions as well.
+        super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
         raise NotImplementedError

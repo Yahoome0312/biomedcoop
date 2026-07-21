@@ -107,13 +107,22 @@ def load_checkpoint(fpath):
     map_location = None if torch.cuda.is_available() else "cpu"
 
     try:
-        checkpoint = torch.load(fpath, map_location=map_location)
+        # [Reproduction compatibility] PyTorch >=2.6 defaults to
+        # weights_only=True, but Dassl checkpoints also contain optimizer and
+        # scheduler objects. These are local checkpoints produced by this
+        # trusted training code, so load the complete checkpoint explicitly.
+        checkpoint = torch.load(
+            fpath, map_location=map_location, weights_only=False
+        )
 
     except UnicodeDecodeError:
         pickle.load = partial(pickle.load, encoding="latin1")
         pickle.Unpickler = partial(pickle.Unpickler, encoding="latin1")
         checkpoint = torch.load(
-            fpath, pickle_module=pickle, map_location=map_location
+            fpath,
+            pickle_module=pickle,
+            map_location=map_location,
+            weights_only=False,
         )
 
     except Exception:

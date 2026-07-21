@@ -1,4 +1,8 @@
 DATALOADER:
+  # [Windows reproduction] Four workers are stable on the target machine;
+  # the upstream Linux configuration used eight.
+  NUM_WORKERS: 4
+  PERSISTENT_WORKERS: True
   TRAIN_X:
     BATCH_SIZE: 4
   TEST:
@@ -23,6 +27,12 @@ OPTIM:
 
 TRAIN:
   PRINT_FREQ: 20
+
+# [Reproduction metrics] Emit balanced accuracy, macro/one-vs-rest AUC,
+# and per-class precision/recall/specificity/F1 in addition to accuracy.
+TEST:
+  PER_CLASS_RESULT: True
+  COMPUTE_CMAT: True
 
 MODEL:
   BACKBONE:

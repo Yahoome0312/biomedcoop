@@ -183,7 +183,16 @@ def main(args):
 
     print_args(args, cfg)
     print("Collecting env info ...")
-    print("** System info **\n{}\n".format(collect_env_info()))
+    # [Reproduction compatibility] PyTorch's collect_env helper can return
+    # None/raise on Windows when a system query is unavailable. Environment
+    # collection must not prevent the actual experiment from running.
+    try:
+        env_info = collect_env_info()
+    except Exception as exc:
+        env_info = "Environment info unavailable: {}: {}".format(
+            type(exc).__name__, exc
+        )
+    print("** System info **\n{}\n".format(env_info))
 
     trainer = build_trainer(cfg)
     print("Trainer built successfully.")

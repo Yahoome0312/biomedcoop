@@ -1,7 +1,12 @@
 # custom config
 DATA=$1
 DATASET=$2
-SHOTS=$3  # number of shots (1, 2, 4, 8, 16)
+SHOTS=$3  # number of shots (1, 2, 4, 8, 16, 32)
+# [Reproduction addition] Explicitly include the new 32-shot checkpoint path.
+case "${SHOTS}" in
+    1|2|4|8|16|32) ;;
+    *) echo "Unsupported shot count: ${SHOTS}; use 1, 2, 4, 8, 16, or 32"; exit 2 ;;
+esac
 MODEL=BiomedCLIP
 NCTX=4
 CSC=False
