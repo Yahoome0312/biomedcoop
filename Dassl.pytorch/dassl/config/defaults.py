@@ -207,11 +207,17 @@ _C.TEST.PER_CLASS_RESULT = False
 _C.TEST.COMPUTE_CMAT = False
 # If NO_TEST=True, no testing will be conducted
 _C.TEST.NO_TEST = False
+# Run validation/best-checkpoint selection but omit the final test pass. This
+# is used during hyperparameter search to prevent test-set leakage.
+_C.TEST.SKIP_FINAL_TEST = False
 # Use test or val set for FINAL evaluation
 _C.TEST.SPLIT = "test"
 # Which model to test after training
 # Either last_step or best_val
 _C.TEST.FINAL_MODEL = "last_step"
+# Metric returned by validation and used for best-checkpoint selection.
+# Existing trainers retain accuracy unless a method opts into another metric.
+_C.TEST.BEST_METRIC = "accuracy"
 
 ###########################
 # Trainer specifics

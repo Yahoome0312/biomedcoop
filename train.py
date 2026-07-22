@@ -21,6 +21,7 @@ import datasets.octmnist
 import trainers.Zeroshot.zeroshot
 import trainers.CoOp.coop_clip
 import trainers.CoOp.coop_biomedclip
+import trainers.CoOp.coop_vpt_biomedclip
 import trainers.CoOp.coop_pubmedclip
 import trainers.CoOp.coop_pmcclip
 import trainers.CoCoOp.cocoop_clip
@@ -109,6 +110,29 @@ def extend_cfg(cfg):
     cfg.TRAINER.COOP.CTX_INIT = ""  # initialization words
     cfg.TRAINER.COOP.PREC = "fp32"  # fp16, fp32, amp
     cfg.TRAINER.COOP.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
+
+    cfg.TRAINER.COOPVPT = CN()
+    cfg.TRAINER.COOPVPT.PREC = "amp"
+    cfg.TRAINER.COOPVPT.VPT_ENABLED = False
+    cfg.TRAINER.COOPVPT.VPT_MODE = "shallow"
+    cfg.TRAINER.COOPVPT.VPT_N_CTX = 5
+    cfg.TRAINER.COOPVPT.VPT_DROPOUT = 0.0
+    cfg.TRAINER.COOPVPT.VPT_INIT = "uniform"
+    # Keep complete and independent optimization/scheduling configurations.
+    cfg.TRAINER.COOPVPT.COOP_OPTIM = cfg.OPTIM.clone()
+    cfg.TRAINER.COOPVPT.VPT_OPTIM = cfg.OPTIM.clone()
+    for optim_cfg in (
+        cfg.TRAINER.COOPVPT.COOP_OPTIM,
+        cfg.TRAINER.COOPVPT.VPT_OPTIM,
+    ):
+        optim_cfg.NAME = "adamw"
+        optim_cfg.LR = 5e-4
+        optim_cfg.WEIGHT_DECAY = 1e-4
+        optim_cfg.MAX_EPOCH = 100
+        optim_cfg.LR_SCHEDULER = "cosine"
+        optim_cfg.WARMUP_EPOCH = 1
+        optim_cfg.WARMUP_TYPE = "constant"
+        optim_cfg.WARMUP_CONS_LR = 1e-5
 
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 4  # number of context vectors

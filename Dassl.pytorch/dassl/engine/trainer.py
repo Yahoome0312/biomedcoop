@@ -506,11 +506,13 @@ class SimpleTrainer(TrainerBase):
         print("Finished training")
 
         do_test = not self.cfg.TEST.NO_TEST
-        if do_test:
+        if do_test and not self.cfg.TEST.SKIP_FINAL_TEST:
             if self.cfg.TEST.FINAL_MODEL == "best_val":
                 print("Deploy the model with the best val performance")
                 self.load_model(self.output_dir)
             self.test()
+        elif do_test:
+            print("Skipping final test pass (TEST.SKIP_FINAL_TEST=True)")
 
         # Show elapsed time
         elapsed = round(time.time() - self.time_start)
@@ -538,6 +540,21 @@ class SimpleTrainer(TrainerBase):
                     self.output_dir,
                     model_name="model-best.pth.tar"
                 )
+                best_record = {
+                    "epoch": self.epoch + 1,
+                    "selection_metric": self.cfg.TEST.BEST_METRIC,
+                    "selection_value": float(curr_result),
+                    "metrics": {
+                        key: float(value)
+                        for key, value in self.last_eval_results.items()
+                    },
+                }
+                with open(
+                    osp.join(self.output_dir, "best_validation.json"),
+                    "w",
+                    encoding="utf-8",
+                ) as file:
+                    json.dump(best_record, file, indent=2)
 
         if meet_checkpoint_freq or last_epoch:
             self.save_model(self.epoch, self.output_dir)
@@ -574,12 +591,20 @@ class SimpleTrainer(TrainerBase):
         with open(output_file, 'w') as f:
             json.dump(res_json, f)
         results = self.evaluator.evaluate()
+        self.last_eval_results = results
 
         for k, v in results.items():
             tag = "{}/{}".format(split, k)
             self.write_scalar(tag, v, self.epoch)
 
-        return list(results.values())[0]
+        best_metric = self.cfg.TEST.BEST_METRIC
+        if best_metric not in results:
+            raise KeyError(
+                "TEST.BEST_METRIC={!r} is unavailable; choose one of {}".format(
+                    best_metric, list(results)
+                )
+            )
+        return results[best_metric]
 
     @torch.no_grad()
     def test(self, split=None):
@@ -603,12 +628,20 @@ class SimpleTrainer(TrainerBase):
             self.evaluator.process(output, label)
 
         results = self.evaluator.evaluate()
+        self.last_eval_results = results
 
         for k, v in results.items():
             tag = "{}/{}".format(split, k)
             self.write_scalar(tag, v, self.epoch)
 
-        return list(results.values())[0]
+        best_metric = self.cfg.TEST.BEST_METRIC
+        if best_metric not in results:
+            raise KeyError(
+                "TEST.BEST_METRIC={!r} is unavailable; choose one of {}".format(
+                    best_metric, list(results)
+                )
+            )
+        return results[best_metric]
 
     def model_inference(self, input):
         return self.model(input)
