@@ -4,12 +4,17 @@ import argparse
 import csv
 import json
 import re
+import sys
 from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 
 from scripts.biomedcoop.aggregate_results import aggregate, parse_log
 
 
-DEFAULT_METHODS = ("PureCoOp_AdamW", "CoOp_VPT_Shallow", "CoOp_VPT_Deep")
+DEFAULT_METHODS = tuple("CoOp_VPT_Deep_Nv{}".format(tokens) for tokens in (1, 2, 5, 10, 20))
 
 
 def parse_runtime_metadata(log_path):
@@ -28,18 +33,35 @@ def parse_runtime_metadata(log_path):
 
 
 def load_hyperparameters(search_root, method):
-    selected_name = {
-        "PureCoOp_AdamW": "selected_coop.json",
-        "CoOp_VPT_Shallow": "selected_shallow.json",
-        "CoOp_VPT_Deep": "selected_deep.json",
-    }[method]
-    return json.loads((search_root / selected_name).read_text(encoding="utf-8"))["parameters"]
+    prefix = "CoOp_VPT_Deep_Nv"
+    if not method.startswith(prefix):
+        raise ValueError("Only VPT-Deep methods are supported: {}".format(method))
+    tokens = int(method[len(prefix):])
+    selected_path = search_root / "selected_vpt_deep.json"
+    selected = json.loads(selected_path.read_text(encoding="utf-8"))
+    record = selected["selections"][str(tokens)]
+    return {
+        "text_tokens": selected["text_tokens"],
+        "ctx_init": selected["ctx_init"],
+        "vpt_mode": "deep",
+        "vpt_tokens": tokens,
+        "shared_lr": record["parameters"]["shared_lr"],
+        "validation_score": record["score"],
+    }
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output-root", type=Path, default=Path("output/dermamnist_coopvpt_final"))
-    parser.add_argument("--search-root", type=Path, default=Path("output/dermamnist_coopvpt_search"))
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        default=Path("output/dermamnist_coop_native_vptdeep_adamw"),
+    )
+    parser.add_argument(
+        "--search-root",
+        type=Path,
+        default=Path("output/dermamnist_coop_native_vptdeep_search"),
+    )
     parser.add_argument("--methods", nargs="+", default=DEFAULT_METHODS)
     parser.add_argument("--shots", nargs="+", type=int, default=(1, 2, 4, 8, 16, 32))
     parser.add_argument("--seeds", nargs="+", type=int, default=(1, 2, 3))
@@ -188,17 +210,16 @@ def main():
         "",
         "## Selected hyperparameters",
         "",
-        "| Method | Text tokens | CoOp LR | CoOp WD | VPT mode | Visual tokens | VPT LR | VPT WD | Trainable params |",
-        "|---|---:|---:|---:|---|---:|---:|---:|---:|",
+        "| Method | Text tokens | Shared LR | VPT mode | Visual tokens | Trainable params |",
+        "|---|---:|---:|---|---:|---:|",
     ])
     for method in args.methods:
         first = result[method][str(args.shots[0])]
         params = first["hyperparameters"]
         lines.append(
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {:,} |".format(
-                method, params["text_tokens"], params["coop_lr"], params["coop_wd"],
+            "| {} | {} | {} | {} | {} | {:,} |".format(
+                method, params["text_tokens"], params["shared_lr"],
                 params.get("vpt_mode", "off"), params.get("vpt_tokens", 0),
-                params.get("vpt_lr", 0), params.get("vpt_wd", 0),
                 first["resources"]["trainable_parameters"],
             )
         )

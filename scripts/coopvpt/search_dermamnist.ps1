@@ -1,9 +1,7 @@
 param(
-    [ValidateSet('coop', 'vpt', 'all')]
-    [string]$Phase = 'all',
     [string]$DataRoot = 'D:\Data\dermamnist',
-    [string]$OutputRoot = 'output\dermamnist_coopvpt_search',
-    [int]$BatchSize = 16
+    [string]$OutputRoot = 'output\dermamnist_coop_native_vptdeep_search',
+    [int]$BatchSize = 32
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,7 +10,6 @@ $python = 'D:\Anaconda\python.exe'
 
 Set-Location $repo
 & $python -u scripts\coopvpt\search_dermamnist.py `
-    --phase $Phase `
     --data-root $DataRoot `
     --output-root $OutputRoot `
     --batch-size $BatchSize `

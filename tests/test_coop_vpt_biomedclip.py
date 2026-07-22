@@ -29,10 +29,9 @@ class _TinyTimmVisual(nn.Module):
         return self.head(self.trunk(image))
 
 
-@pytest.mark.parametrize("mode", ["shallow", "deep"])
-def test_vpt_keeps_sequence_length_and_output_contract(mode):
+def test_vpt_deep_keeps_sequence_length_and_output_contract():
     visual = _TinyTimmVisual()
-    adapter = TimmViTVisualPromptEncoder(visual, num_tokens=5, mode=mode)
+    adapter = TimmViTVisualPromptEncoder(visual, num_tokens=5, mode="deep")
     lengths = []
     hooks = [
         block.register_forward_pre_hook(
@@ -50,20 +49,16 @@ def test_vpt_keeps_sequence_length_and_output_contract(mode):
     assert lengths == [22, 22, 22]  # CLS + 16 patches + 5 prompts
 
 
-@pytest.mark.parametrize(
-    ("mode", "expected_shape"),
-    [("shallow", (1, 5, 32)), ("deep", (3, 5, 32))],
-)
-def test_only_visual_prompt_receives_gradients(mode, expected_shape):
+def test_only_visual_prompt_receives_gradients():
     visual = _TinyTimmVisual()
-    adapter = TimmViTVisualPromptEncoder(visual, num_tokens=5, mode=mode)
+    adapter = TimmViTVisualPromptEncoder(visual, num_tokens=5, mode="deep")
     for parameter in adapter.parameters():
         parameter.requires_grad_(False)
     adapter.visual_prompt.prompt_embeddings.requires_grad_(True)
 
     adapter(torch.randn(2, 3, 32, 32)).sum().backward()
 
-    assert tuple(adapter.visual_prompt.prompt_embeddings.shape) == expected_shape
+    assert tuple(adapter.visual_prompt.prompt_embeddings.shape) == (3, 5, 32)
     assert adapter.visual_prompt.prompt_embeddings.grad is not None
     assert all(
         parameter.grad is None
@@ -72,17 +67,19 @@ def test_only_visual_prompt_receives_gradients(mode, expected_shape):
     )
 
 
-def test_text_and_visual_optimizers_are_independent():
+def test_coop_and_visual_prompt_use_one_adamw_group():
     text_prompt = nn.Parameter(torch.randn(4, 32))
     visual_prompt = nn.Parameter(torch.randn(3, 5, 32))
-    text_optimizer = torch.optim.AdamW([text_prompt], lr=1e-4, weight_decay=0.0)
-    visual_optimizer = torch.optim.AdamW([visual_prompt], lr=1e-3, weight_decay=1e-3)
+    optimizer = torch.optim.AdamW(
+        [text_prompt, visual_prompt], lr=2e-3, weight_decay=5e-4
+    )
 
-    text_ids = {id(p) for group in text_optimizer.param_groups for p in group["params"]}
-    visual_ids = {id(p) for group in visual_optimizer.param_groups for p in group["params"]}
-    assert text_ids.isdisjoint(visual_ids)
-    assert text_optimizer.param_groups[0]["lr"] != visual_optimizer.param_groups[0]["lr"]
-    assert text_optimizer.param_groups[0]["weight_decay"] != visual_optimizer.param_groups[0]["weight_decay"]
+    assert len(optimizer.param_groups) == 1
+    parameter_ids = {
+        id(p) for group in optimizer.param_groups for p in group["params"]
+    }
+    assert parameter_ids == {id(text_prompt), id(visual_prompt)}
+    assert optimizer.param_groups[0]["lr"] == 2e-3
 
 
 @pytest.mark.skipif(

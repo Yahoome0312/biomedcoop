@@ -1,4 +1,4 @@
-"""CE-only CoOp with optional shallow/deep Visual Prompt Tuning."""
+"""CE-only CoOp with the project-local deep Visual Prompt Tuning adapter."""
 
 import os.path as osp
 
@@ -17,17 +17,26 @@ from models.biomedclip_loader import load_biomedclip
 from trainers.CoOp.coop_biomedclip import CustomCLIP
 
 
+class PromptParameterBundle(nn.Module):
+    """Checkpoint only the trainable prompt modules, not frozen BiomedCLIP."""
+
+    def __init__(self, prompt_learner, visual_prompt=None):
+        super().__init__()
+        self.prompt_learner = prompt_learner
+        if visual_prompt is not None:
+            self.visual_prompt = visual_prompt
+
+
 @TRAINER_REGISTRY.register()
 class CoOpVPT_BiomedCLIP(TrainerX):
-    """Train only the CoOp context and, when enabled, visual prompts."""
+    """Train CoOp and VPT prompts with one AdamW and one shared learning rate."""
 
     def check_cfg(self, cfg):
         trainer_cfg = cfg.TRAINER.COOPVPT
         assert trainer_cfg.PREC in {"fp16", "fp32", "amp"}
-        assert trainer_cfg.VPT_MODE in {"shallow", "deep"}
+        assert trainer_cfg.VPT_MODE == "deep"
         assert trainer_cfg.VPT_INIT == "uniform"
-        assert trainer_cfg.COOP_OPTIM.NAME.lower() == "adamw"
-        assert trainer_cfg.VPT_OPTIM.NAME.lower() == "adamw"
+        assert trainer_cfg.OPTIM.NAME.lower() == "adamw"
 
     def build_model(self):
         cfg = self.cfg
@@ -37,22 +46,29 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         print("Loading and validating BiomedCLIP")
         biomedclip_model, _ = load_biomedclip(
             vpt_enabled=trainer_cfg.VPT_ENABLED,
-            vpt_mode=trainer_cfg.VPT_MODE,
+            vpt_mode="deep",
             vpt_num_tokens=trainer_cfg.VPT_N_CTX,
             vpt_dropout=trainer_cfg.VPT_DROPOUT,
         )
         if trainer_cfg.PREC in {"fp32", "amp"}:
             biomedclip_model.float()
 
-        print("Building CE-only CoOp{}".format(" + VPT" if trainer_cfg.VPT_ENABLED else ""))
+        print(
+            "Building CE-only CoOp{}".format(
+                " + VPT-Deep" if trainer_cfg.VPT_ENABLED else ""
+            )
+        )
         self.model = CustomCLIP(cfg, classnames, biomedclip_model.eval())
         self.vpt_enabled = bool(trainer_cfg.VPT_ENABLED)
 
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)
         self.model.prompt_learner.ctx.requires_grad_(True)
+
+        visual_prompt = None
         if self.vpt_enabled:
-            for parameter in self.model.image_encoder.visual_prompt.parameters():
+            visual_prompt = self.model.image_encoder.visual_prompt
+            for parameter in visual_prompt.parameters():
                 parameter.requires_grad_(True)
 
         if cfg.MODEL.INIT_WEIGHTS:
@@ -61,32 +77,23 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         self.model.to(self.device)
         self.model.eval()
         self.model.prompt_learner.train()
-        if self.vpt_enabled:
-            self.model.image_encoder.visual_prompt.train()
+        if visual_prompt is not None:
+            visual_prompt.train()
 
-        coop_parameters = [self.model.prompt_learner.ctx]
-        self.coop_optim = build_optimizer(coop_parameters, trainer_cfg.COOP_OPTIM)
-        self.coop_sched = build_lr_scheduler(self.coop_optim, trainer_cfg.COOP_OPTIM)
-        self.register_model(
-            "prompt_learner",
-            self.model.prompt_learner,
-            self.coop_optim,
-            self.coop_sched,
+        self.prompt_parameters = PromptParameterBundle(
+            self.model.prompt_learner, visual_prompt
         )
+        trainable_parameters = [self.model.prompt_learner.ctx]
+        if visual_prompt is not None:
+            trainable_parameters.extend(list(visual_prompt.parameters()))
 
-        self.vpt_optim = None
-        self.vpt_sched = None
-        if self.vpt_enabled:
-            visual_prompt = self.model.image_encoder.visual_prompt
-            self.vpt_optim = build_optimizer(
-                visual_prompt.parameters(), trainer_cfg.VPT_OPTIM
-            )
-            self.vpt_sched = build_lr_scheduler(
-                self.vpt_optim, trainer_cfg.VPT_OPTIM
-            )
-            self.register_model(
-                "vpt_prompt", visual_prompt, self.vpt_optim, self.vpt_sched
-            )
+        # One optimizer and one parameter group intentionally cover both prompt
+        # branches. The shared LR is supplied by TRAINER.COOPVPT.OPTIM.LR.
+        self.optim = build_optimizer(trainable_parameters, trainer_cfg.OPTIM)
+        self.sched = build_lr_scheduler(self.optim, trainer_cfg.OPTIM)
+        self.register_model(
+            "prompt_parameters", self.prompt_parameters, self.optim, self.sched
+        )
 
         self._audit_trainable_parameters()
         self.scaler = GradScaler() if trainer_cfg.PREC == "amp" else None
@@ -115,19 +122,29 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 )
             )
 
-        coop_ids = {id(parameter) for group in self.coop_optim.param_groups for parameter in group["params"]}
-        vpt_ids = set()
-        if self.vpt_optim is not None:
-            vpt_ids = {id(parameter) for group in self.vpt_optim.param_groups for parameter in group["params"]}
-        if coop_ids & vpt_ids:
-            raise RuntimeError("CoOp and VPT optimizer parameter sets overlap")
-        if coop_ids | vpt_ids != {id(parameter) for parameter in trainable.values()}:
-            raise RuntimeError("Every trainable parameter must belong to exactly one optimizer")
+        if len(self.optim.param_groups) != 1:
+            raise RuntimeError(
+                "Expected one AdamW parameter group, got {}".format(
+                    len(self.optim.param_groups)
+                )
+            )
+        optimizer_ids = {
+            id(parameter)
+            for group in self.optim.param_groups
+            for parameter in group["params"]
+        }
+        trainable_ids = {id(parameter) for parameter in trainable.values()}
+        if optimizer_ids != trainable_ids:
+            raise RuntimeError(
+                "The single optimizer must contain every and only trainable prompt parameter"
+            )
 
+        print("Optimizer: {}".format(self.optim.__class__.__name__))
+        print("Shared learning rate: {}".format(self.optim.param_groups[0]["lr"]))
         print("Trainable parameters:")
         for name, parameter in trainable.items():
             print("  {} shape={} count={:,}".format(name, tuple(parameter.shape), parameter.numel()))
-        print("Total trainable parameters: {:,}".format(sum(p.numel() for p in trainable.values())))
+        print( "Total trainable parameters: {:,}".format(sum(parameter.numel() for parameter in trainable.values())))
 
     def set_model_mode(self, mode="train", names=None):
         model = self._unwrapped_model()
@@ -156,61 +173,49 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
     def forward_backward(self, batch):
         image, label = self.parse_batch_train(batch)
-        names = self.get_model_names()
-        self.model_zero_grad(names)
+        self.model_zero_grad()
 
         if self.cfg.TRAINER.COOPVPT.PREC == "amp":
             with autocast():
                 output = self.model(image)
                 loss = F.cross_entropy(output, label)
             self.scaler.scale(loss).backward()
-            self.scaler.step(self.coop_optim)
-            if self.vpt_optim is not None:
-                self.scaler.step(self.vpt_optim)
+            self.scaler.step(self.optim)
             self.scaler.update()
         else:
             output = self.model(image)
             loss = F.cross_entropy(output, label)
             self.model_backward(loss)
-            self.coop_optim.step()
-            if self.vpt_optim is not None:
-                self.vpt_optim.step()
+            self.optim.step()
 
         loss_summary = {
             "loss": loss.item(),
             "acc": compute_accuracy(output, label)[0].item(),
-            "lr_coop": self.coop_optim.param_groups[0]["lr"],
+            "lr": self.optim.param_groups[0]["lr"],
         }
-        if self.vpt_optim is not None:
-            loss_summary["lr_vpt"] = self.vpt_optim.param_groups[0]["lr"]
 
         if (self.batch_idx + 1) == self.num_batches:
-            self.update_lr(names)
+            self.update_lr()
         return loss_summary
 
     def parse_batch_train(self, batch):
         return batch["img"].to(self.device), batch["label"].to(self.device)
 
     def resume_model_if_exist(self, directory):
-        names = self.get_model_names()
-        for name in names:
-            if not osp.exists(osp.join(directory, name, "checkpoint")):
-                print("No complete CoOp/VPT checkpoint found, train from scratch")
-                return 0
+        prompt_dir = osp.join(directory, "prompt_parameters")
+        if not osp.exists(osp.join(prompt_dir, "checkpoint")):
+            print("No complete prompt checkpoint found, train from scratch")
+            return 0
+        return resume_from_checkpoint(
+            prompt_dir, self.prompt_parameters, self.optim, self.sched
+        )
 
-        epochs = []
-        for name in names:
-            epochs.append(
-                resume_from_checkpoint(
-                    osp.join(directory, name),
-                    self._models[name],
-                    self._optims[name],
-                    self._scheds[name],
-                )
-            )
-        if len(set(epochs)) != 1:
-            raise RuntimeError("Prompt checkpoint epochs do not match: {}".format(epochs))
-        return epochs[0]
+    @staticmethod
+    def _load_prompt_learner_state(module, state_dict):
+        state_dict = dict(state_dict)
+        state_dict.pop("token_prefix", None)
+        state_dict.pop("token_suffix", None)
+        module.load_state_dict(state_dict, strict=False)
 
     def load_model(self, directory, epoch=None):
         if not directory:
@@ -218,20 +223,39 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             return
 
         model_file = "model-best.pth.tar" if epoch is None else "model.pth.tar-{}".format(epoch)
-        for name in self.get_model_names():
-            model_path = osp.join(directory, name, model_file)
-            if not osp.exists(model_path):
-                raise FileNotFoundError('Model not found at "{}"'.format(model_path))
-            checkpoint_data = load_checkpoint(model_path)
-            state_dict = checkpoint_data["state_dict"]
-            if name == "prompt_learner":
-                state_dict.pop("token_prefix", None)
-                state_dict.pop("token_suffix", None)
+        prompt_dir = osp.join(directory, "prompt_parameters")
+        prompt_path = osp.join(prompt_dir, model_file)
+
+        if osp.exists(prompt_path):
+            checkpoint_data = load_checkpoint(prompt_path)
             print(
-                'Loading {} from "{}" (epoch={})'.format(
-                    name, model_path, checkpoint_data["epoch"]
+                'Loading prompt_parameters from "{}" (epoch={})'.format(
+                    prompt_path, checkpoint_data["epoch"]
                 )
             )
-            self._models[name].load_state_dict(
-                state_dict, strict=(name == "vpt_prompt")
+            self.prompt_parameters.load_state_dict(
+                checkpoint_data["state_dict"], strict=True
             )
+            return
+
+        # Backward-compatible explicit extraction of a text prompt from old
+        # CoOp checkpoints. A VPT prompt is intentionally not fabricated from
+        # an old checkpoint and remains at its configured initialization.
+        old_path = osp.join(directory, "prompt_learner", model_file)
+        if osp.exists(old_path):
+            checkpoint_data = load_checkpoint(old_path)
+            print(
+                'Loading legacy prompt_learner from "{}" (epoch={})'.format(
+                    old_path, checkpoint_data["epoch"]
+                )
+            )
+            self._load_prompt_learner_state(
+                self.model.prompt_learner, checkpoint_data["state_dict"]
+            )
+            return
+
+        raise FileNotFoundError(
+            'Prompt checkpoint not found at "{}" or "{}"'.format(
+                prompt_path, old_path
+            )
+        )

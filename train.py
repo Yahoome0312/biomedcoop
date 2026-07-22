@@ -112,27 +112,22 @@ def extend_cfg(cfg):
     cfg.TRAINER.COOP.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
 
     cfg.TRAINER.COOPVPT = CN()
-    cfg.TRAINER.COOPVPT.PREC = "amp"
+    cfg.TRAINER.COOPVPT.PREC = "fp32"
     cfg.TRAINER.COOPVPT.VPT_ENABLED = False
-    cfg.TRAINER.COOPVPT.VPT_MODE = "shallow"
+    cfg.TRAINER.COOPVPT.VPT_MODE = "deep"
     cfg.TRAINER.COOPVPT.VPT_N_CTX = 5
     cfg.TRAINER.COOPVPT.VPT_DROPOUT = 0.0
     cfg.TRAINER.COOPVPT.VPT_INIT = "uniform"
-    # Keep complete and independent optimization/scheduling configurations.
-    cfg.TRAINER.COOPVPT.COOP_OPTIM = cfg.OPTIM.clone()
-    cfg.TRAINER.COOPVPT.VPT_OPTIM = cfg.OPTIM.clone()
-    for optim_cfg in (
-        cfg.TRAINER.COOPVPT.COOP_OPTIM,
-        cfg.TRAINER.COOPVPT.VPT_OPTIM,
-    ):
-        optim_cfg.NAME = "adamw"
-        optim_cfg.LR = 5e-4
-        optim_cfg.WEIGHT_DECAY = 1e-4
-        optim_cfg.MAX_EPOCH = 100
-        optim_cfg.LR_SCHEDULER = "cosine"
-        optim_cfg.WARMUP_EPOCH = 1
-        optim_cfg.WARMUP_TYPE = "constant"
-        optim_cfg.WARMUP_CONS_LR = 1e-5
+    # One AdamW configuration and one shared LR cover CoOp and VPT prompts.
+    cfg.TRAINER.COOPVPT.OPTIM = cfg.OPTIM.clone()
+    cfg.TRAINER.COOPVPT.OPTIM.NAME = "adamw"
+    cfg.TRAINER.COOPVPT.OPTIM.LR = 0.002
+    cfg.TRAINER.COOPVPT.OPTIM.WEIGHT_DECAY = 5e-4
+    cfg.TRAINER.COOPVPT.OPTIM.MAX_EPOCH = 100
+    cfg.TRAINER.COOPVPT.OPTIM.LR_SCHEDULER = "cosine"
+    cfg.TRAINER.COOPVPT.OPTIM.WARMUP_EPOCH = 1
+    cfg.TRAINER.COOPVPT.OPTIM.WARMUP_TYPE = "constant"
+    cfg.TRAINER.COOPVPT.OPTIM.WARMUP_CONS_LR = 1e-5
 
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 4  # number of context vectors
