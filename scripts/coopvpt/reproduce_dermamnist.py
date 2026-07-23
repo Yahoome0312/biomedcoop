@@ -18,8 +18,12 @@ def run_one(args, tokens, selected, shots, seed):
     method = "CoOp_VPT_Deep_Nv{}".format(tokens)
     output = args.output_root / method / "shots_{}".format(shots) / "seed{}".format(seed)
     final_checkpoint = output / "prompt_parameters" / "model.pth.tar-100"
+    best_checkpoint = output / "prompt_parameters" / "model-best.pth.tar"
     complete_path = output / "run_complete.json"
-    if complete_path.exists() and final_checkpoint.exists():
+    checkpoint_ready = final_checkpoint.exists()
+    if args.final_model == "best_val":
+        checkpoint_ready = checkpoint_ready and best_checkpoint.exists()
+    if complete_path.exists() and checkpoint_ready:
         print(
             "SKIP {} shots={} seed={} (complete)".format(method, shots, seed),
             flush=True,
@@ -32,6 +36,8 @@ def run_one(args, tokens, selected, shots, seed):
         "shots": shots,
         "seed": seed,
         "batch_size": args.batch_size,
+        "final_model": args.final_model,
+        "best_metric": "accuracy",
         "text_tokens": 4,
         "ctx_init": "a photo of a",
         **parameters,
@@ -45,7 +51,8 @@ def run_one(args, tokens, selected, shots, seed):
         "DATASET.NUM_SHOTS", str(shots),
         "DATALOADER.TRAIN_X.BATCH_SIZE", str(args.batch_size),
         "DATALOADER.NUM_WORKERS", "4",
-        "TEST.FINAL_MODEL", "last_step",
+        "TEST.FINAL_MODEL", args.final_model,
+        "TEST.BEST_METRIC", "accuracy",
         "TEST.SKIP_FINAL_TEST", "False",
         "TEST.COMPUTE_CMAT", "True",
         "TRAINER.COOP.N_CTX", "4",
@@ -116,6 +123,12 @@ def main():
     )
     parser.add_argument("--python", default=r"D:\Anaconda\python.exe")
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument(
+        "--final-model",
+        choices=("last_step", "best_val"),
+        default="last_step",
+        help="Checkpoint used for final test evaluation.",
+    )
     parser.add_argument("--budgets", nargs="+", type=int, default=(1, 2, 5, 10, 20))
     parser.add_argument("--shots", nargs="+", type=int, default=(1, 2, 4, 8, 16, 32))
     parser.add_argument("--seeds", nargs="+", type=int, default=(1, 2, 3))

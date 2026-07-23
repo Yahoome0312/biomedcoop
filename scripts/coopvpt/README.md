@@ -17,14 +17,20 @@ Run the stages in order:
 #    shots 1/2/4/8/16/32 and seeds 1/2/3.
 .\scripts\coopvpt\reproduce_dermamnist.ps1
 
+# Or select the checkpoint with the highest validation accuracy before test.
+.\scripts\coopvpt\reproduce_dermamnist.ps1 `
+    -FinalModel best_val `
+    -OutputRoot output\dermamnist_coop_native_vptdeep_adamw_bestval
+
 # 3. Produce JSON, CSV, and Markdown summaries.
 D:\Anaconda\python.exe scripts\coopvpt\aggregate_results.py
 ```
 
 Search runs use validation accuracy, matching the original BiomedCoOp
-checkpoint-selection protocol, and skip the test split. Final runs use the
-last epoch and evaluate the test split once. Shallow is not part of this
-experiment workflow.
+checkpoint-selection protocol, and skip the test split. Final runs default to
+the last epoch and evaluate the test split once. Passing `-FinalModel
+best_val` instead evaluates the checkpoint with the highest validation
+accuracy. Shallow is not part of this experiment workflow.
 
 Every output directory contains `run_manifest.json`, `console.log`, Dassl's
 `log.txt`, and prompt-only checkpoints. Re-running a command skips complete

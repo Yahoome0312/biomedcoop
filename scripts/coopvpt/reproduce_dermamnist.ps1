@@ -2,7 +2,9 @@ param(
     [string]$DataRoot = 'D:\Data\dermamnist',
     [string]$SearchRoot = 'output\dermamnist_coop_native_vptdeep_search',
     [string]$OutputRoot = 'output\dermamnist_coop_native_vptdeep_adamw',
-    [int]$BatchSize = 32
+    [int]$BatchSize = 32,
+    [ValidateSet('last_step', 'best_val')]
+    [string]$FinalModel = 'last_step'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +18,7 @@ $arguments = @(
     '--search-root', $SearchRoot,
     '--output-root', $OutputRoot,
     '--batch-size', "$BatchSize",
+    '--final-model', $FinalModel,
     '--python', $python
 )
 & $python @arguments
