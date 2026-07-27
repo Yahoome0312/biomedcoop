@@ -15,14 +15,47 @@ class LungColon(DatasetBase):
 
     def __init__(self, cfg):
         root = os.path.abspath(os.path.expanduser(cfg.DATASET.ROOT))
-        self.dataset_dir = os.path.join(root, self.dataset_dir)
-        self.image_dir = os.path.join(self.dataset_dir, "LungColon")
-        self.split_path = os.path.join(self.dataset_dir, "split_LungColon.json")
+        raw_class_dirs = {
+            "colon_adenocarcinoma": "colon_aca",
+            "colon_benign_tissue": "colon_n",
+            "lung_adenocarcinoma": "lung_aca",
+            "lung_benign_tissue": "lung_n",
+            "lung_squamous_cell_carcinoma": "lung_scc",
+        }
+        raw_layout = all(
+            os.path.isdir(os.path.join(root, directory))
+            for directory in raw_class_dirs.values()
+        )
+
+        if raw_layout:
+            # The public LC25000 release uses abbreviated class directories
+            # directly below the supplied root. Reuse the repository's fixed
+            # split while mapping its canonical directory names to that layout.
+            self.dataset_dir = root
+            self.image_dir = root
+            self.split_path = os.path.abspath(
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "..",
+                    "data",
+                    "LungColon",
+                    "split_LungColon.json",
+                )
+            )
+            self.raw_class_dirs = raw_class_dirs
+        else:
+            self.dataset_dir = os.path.join(root, self.dataset_dir)
+            self.image_dir = os.path.join(self.dataset_dir, "LungColon")
+            self.split_path = os.path.join(self.dataset_dir, "split_LungColon.json")
+            self.raw_class_dirs = None
+
         self.split_fewshot_dir = os.path.join(self.dataset_dir, "split_fewshot")
         mkdir_if_missing(self.split_fewshot_dir)
 
         if os.path.exists(self.split_path):
-            train, val, test = self.read_split(self.split_path, self.image_dir)
+            train, val, test = self.read_split(
+                self.split_path, self.image_dir, self.raw_class_dirs
+            )
         else:
             train, val, test = self.read_and_split_data(self.image_dir)
             self.save_split(train, val, test, self.split_path, self.image_dir)
@@ -128,10 +161,14 @@ class LungColon(DatasetBase):
         print(f"Saved split to {filepath}")
 
     @staticmethod
-    def read_split(filepath, path_prefix):
+    def read_split(filepath, path_prefix, class_dir_map=None):
         def _convert(items):
             out = []
             for impath, label, classname in items:
+                if class_dir_map is not None:
+                    class_dir, filename = impath.replace("\\", "/").split("/", 1)
+                    class_dir = class_dir_map[class_dir]
+                    impath = os.path.join(class_dir, filename)
                 impath = os.path.join(path_prefix, impath)
                 item = Datum(impath=impath, label=int(label), classname=classname)
                 out.append(item)
@@ -236,4 +273,3 @@ class LungColon(DatasetBase):
             output.append(dataset_new)
         
         return output
-
