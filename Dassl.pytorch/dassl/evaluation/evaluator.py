@@ -181,6 +181,7 @@ class Classification(EvaluatorBase):
                         class_auc,
                     )
                 )
+                results["recall_class_{}".format(label)] = 100.0 * recall[idx]
             mean_acc = np.mean(accs)
             print("* average: {:.2f}%".format(mean_acc))
 
