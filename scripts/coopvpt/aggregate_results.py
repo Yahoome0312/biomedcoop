@@ -33,6 +33,17 @@ def parse_runtime_metadata(log_path):
 
 
 def load_hyperparameters(search_root, method):
+    if method == "CoOp_VPT_Deep_TextDeep_Nv5_Nt4":
+        return {
+            "text_tokens": 4,
+            "ctx_init": "a photo of a",
+            "vpt_mode": "deep",
+            "vpt_tokens": 5,
+            "text_prompt_mode": "deep",
+            "text_prompt_tokens": 4,
+            "shared_lr": 5e-3,
+            "validation_score": None,
+        }
     prefix = "CoOp_VPT_Deep_Nv"
     if not method.startswith(prefix):
         raise ValueError("Only VPT-Deep methods are supported: {}".format(method))
@@ -45,6 +56,8 @@ def load_hyperparameters(search_root, method):
         "ctx_init": selected["ctx_init"],
         "vpt_mode": "deep",
         "vpt_tokens": tokens,
+        "text_prompt_mode": "off",
+        "text_prompt_tokens": 0,
         "shared_lr": record["parameters"]["shared_lr"],
         "validation_score": record["score"],
     }
@@ -210,16 +223,18 @@ def main():
         "",
         "## Selected hyperparameters",
         "",
-        "| Method | Text tokens | Shared LR | VPT mode | Visual tokens | Trainable params |",
-        "|---|---:|---:|---|---:|---:|",
+        "| Method | CoOp tokens | Shared LR | VPT mode | Visual tokens | Text mode | Text tokens | Trainable params |",
+        "|---|---:|---:|---|---:|---|---:|---:|",
     ])
     for method in args.methods:
         first = result[method][str(args.shots[0])]
         params = first["hyperparameters"]
         lines.append(
-            "| {} | {} | {} | {} | {} | {:,} |".format(
+            "| {} | {} | {} | {} | {} | {} | {} | {:,} |".format(
                 method, params["text_tokens"], params["shared_lr"],
                 params.get("vpt_mode", "off"), params.get("vpt_tokens", 0),
+                params.get("text_prompt_mode", "off"),
+                params.get("text_prompt_tokens", 0),
                 first["resources"]["trainable_parameters"],
             )
         )

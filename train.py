@@ -118,6 +118,11 @@ def extend_cfg(cfg):
     cfg.TRAINER.COOPVPT.VPT_N_CTX = 5
     cfg.TRAINER.COOPVPT.VPT_DROPOUT = 0.0
     cfg.TRAINER.COOPVPT.VPT_INIT = "uniform"
+    cfg.TRAINER.COOPVPT.TEXT_VPT_ENABLED = False
+    cfg.TRAINER.COOPVPT.TEXT_VPT_MODE = "deep"
+    cfg.TRAINER.COOPVPT.TEXT_VPT_N_CTX = 4
+    cfg.TRAINER.COOPVPT.TEXT_VPT_DROPOUT = 0.0
+    cfg.TRAINER.COOPVPT.TEXT_VPT_INIT = "normal"
     # One AdamW configuration and one shared LR cover CoOp and VPT prompts.
     cfg.TRAINER.COOPVPT.OPTIM = cfg.OPTIM.clone()
     cfg.TRAINER.COOPVPT.OPTIM.NAME = "adamw"

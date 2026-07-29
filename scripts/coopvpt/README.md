@@ -24,6 +24,14 @@ Run the stages in order:
 
 # 3. Produce JSON, CSV, and Markdown summaries.
 D:\Anaconda\python.exe scripts\coopvpt\aggregate_results.py
+
+# 4. Fixed Nv=5 comparison with four text Deep Prompt tokens per BERT layer.
+python scripts/coopvpt/reproduce_text_deep_dermamnist.py
+
+# Aggregate the text-Deep comparison.
+D:\Anaconda\python.exe scripts\coopvpt\aggregate_results.py `
+    --output-root output\dermamnist_coop_native_vptdeep_textdeep_adamw_lr005 `
+    --methods CoOp_VPT_Deep_TextDeep_Nv5_Nt4
 ```
 
 Search runs use validation accuracy, matching the original BiomedCoOp

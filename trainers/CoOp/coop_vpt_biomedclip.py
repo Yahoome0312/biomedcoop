@@ -14,17 +14,20 @@ from dassl.utils import load_checkpoint, load_pretrained_weights
 from dassl.utils.torchtools import resume_from_checkpoint
 
 from models.biomedclip_loader import load_biomedclip
+from models.text_vpt import BertTextDeepPromptEncoder
 from trainers.CoOp.coop_biomedclip import CustomCLIP
 
 
 class PromptParameterBundle(nn.Module):
     """Checkpoint only the trainable prompt modules, not frozen BiomedCLIP."""
 
-    def __init__(self, prompt_learner, visual_prompt=None):
+    def __init__(self, prompt_learner, visual_prompt=None, text_prompt=None):
         super().__init__()
         self.prompt_learner = prompt_learner
         if visual_prompt is not None:
             self.visual_prompt = visual_prompt
+        if text_prompt is not None:
+            self.text_prompt = text_prompt
 
 
 @TRAINER_REGISTRY.register()
@@ -37,6 +40,10 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         assert trainer_cfg.VPT_MODE == "deep"
         assert trainer_cfg.VPT_INIT == "uniform"
         assert trainer_cfg.OPTIM.NAME.lower() == "adamw"
+        if trainer_cfg.TEXT_VPT_ENABLED:
+            assert trainer_cfg.TEXT_VPT_MODE == "deep"
+            assert trainer_cfg.TEXT_VPT_INIT == "normal"
+            assert trainer_cfg.TEXT_VPT_N_CTX > 0
 
     def build_model(self):
         cfg = self.cfg
@@ -54,12 +61,32 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             biomedclip_model.float()
 
         print(
-            "Building CE-only CoOp{}".format(
-                " + VPT-Deep" if trainer_cfg.VPT_ENABLED else ""
+            "Building CE-only CoOp{}{}".format(
+                " + VPT-Deep" if trainer_cfg.VPT_ENABLED else "",
+                " + Text-Deep-Prompt" if trainer_cfg.TEXT_VPT_ENABLED else "",
             )
         )
         self.model = CustomCLIP(cfg, classnames, biomedclip_model.eval())
         self.vpt_enabled = bool(trainer_cfg.VPT_ENABLED)
+        self.text_vpt_enabled = bool(trainer_cfg.TEXT_VPT_ENABLED)
+
+        text_prompt = None
+        if self.text_vpt_enabled:
+            self.model.text_encoder = BertTextDeepPromptEncoder(
+                biomedclip_model.text,
+                num_tokens=trainer_cfg.TEXT_VPT_N_CTX,
+                dropout=trainer_cfg.TEXT_VPT_DROPOUT,
+                init=trainer_cfg.TEXT_VPT_INIT,
+            )
+            text_prompt = self.model.text_encoder.text_prompt
+            print(
+                "Text Deep Prompt: depth={} tokens/layer={} hidden={} shape={}".format(
+                    self.model.text_encoder.depth,
+                    self.model.text_encoder.num_prompt_tokens,
+                    self.model.text_encoder.embed_dim,
+                    tuple(text_prompt.prompt_embeddings.shape),
+                )
+            )
 
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)
@@ -71,6 +98,10 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             for parameter in visual_prompt.parameters():
                 parameter.requires_grad_(True)
 
+        if text_prompt is not None:
+            for parameter in text_prompt.parameters():
+                parameter.requires_grad_(True)
+
         if cfg.MODEL.INIT_WEIGHTS:
             load_pretrained_weights(self.model.prompt_learner, cfg.MODEL.INIT_WEIGHTS)
 
@@ -79,16 +110,20 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         self.model.prompt_learner.train()
         if visual_prompt is not None:
             visual_prompt.train()
+        if text_prompt is not None:
+            text_prompt.train()
 
         self.prompt_parameters = PromptParameterBundle(
-            self.model.prompt_learner, visual_prompt
+            self.model.prompt_learner, visual_prompt, text_prompt
         )
         trainable_parameters = [self.model.prompt_learner.ctx]
         if visual_prompt is not None:
             trainable_parameters.extend(list(visual_prompt.parameters()))
+        if text_prompt is not None:
+            trainable_parameters.extend(list(text_prompt.parameters()))
 
-        # One optimizer and one parameter group intentionally cover both prompt
-        # branches. The shared LR is supplied by TRAINER.COOPVPT.OPTIM.LR.
+        # One optimizer and one parameter group intentionally cover all enabled
+        # prompt branches. The shared LR is supplied by TRAINER.COOPVPT.OPTIM.LR.
         self.optim = build_optimizer(trainable_parameters, trainer_cfg.OPTIM)
         self.sched = build_lr_scheduler(self.optim, trainer_cfg.OPTIM)
         self.register_model(
@@ -115,6 +150,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         expected = {"prompt_learner.ctx"}
         if self.vpt_enabled:
             expected.add("image_encoder.visual_prompt.prompt_embeddings")
+        if self.text_vpt_enabled:
+            expected.add("text_encoder.text_prompt.prompt_embeddings")
         if set(trainable) != expected:
             raise RuntimeError(
                 "Unexpected trainable parameters: expected {}, got {}".format(
@@ -153,10 +190,14 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             model.prompt_learner.train()
             if self.vpt_enabled:
                 model.image_encoder.visual_prompt.train()
+            if self.text_vpt_enabled:
+                model.text_encoder.text_prompt.train()
         elif mode in {"test", "eval"}:
             model.prompt_learner.eval()
             if self.vpt_enabled:
                 model.image_encoder.visual_prompt.eval()
+            if self.text_vpt_enabled:
+                model.text_encoder.text_prompt.eval()
         else:
             raise KeyError(mode)
 
@@ -228,6 +269,14 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
         if osp.exists(prompt_path):
             checkpoint_data = load_checkpoint(prompt_path)
+            if self.text_vpt_enabled and not any(
+                key.startswith("text_prompt.")
+                for key in checkpoint_data["state_dict"]
+            ):
+                raise RuntimeError(
+                    "The checkpoint does not contain text Deep Prompt parameters; "
+                    "resume the text-Deep experiment from its own checkpoint."
+                )
             print(
                 'Loading prompt_parameters from "{}" (epoch={})'.format(
                     prompt_path, checkpoint_data["epoch"]
@@ -243,6 +292,11 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         # an old checkpoint and remains at its configured initialization.
         old_path = osp.join(directory, "prompt_learner", model_file)
         if osp.exists(old_path):
+            if self.text_vpt_enabled:
+                raise RuntimeError(
+                    "A legacy CoOp checkpoint cannot restore text Deep Prompt; "
+                    "use a complete prompt_parameters checkpoint from this experiment."
+                )
             checkpoint_data = load_checkpoint(old_path)
             print(
                 'Loading legacy prompt_learner from "{}" (epoch={})'.format(
