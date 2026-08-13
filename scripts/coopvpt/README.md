@@ -34,12 +34,25 @@ D:\Anaconda\python.exe scripts\coopvpt\aggregate_results.py `
     --methods CoOp_VPT_Deep_TextDeep_Nv5_Nt4
 ```
 
-Search runs use validation accuracy, matching the original BiomedCoOp
-checkpoint-selection protocol, and skip the test split. Final runs default to
-the last epoch and evaluate the test split once. Passing `-FinalModel
-best_val` instead evaluates the checkpoint with the highest validation
-accuracy. Shallow is not part of this experiment workflow.
+Few-shot sampling is applied only to the training split. Validation always uses
+the complete official validation split with its natural class distribution.
+Every epoch performs one validation pass; that same result independently
+updates `model-best-accuracy.pth.tar` and
+`model-best-balanced_accuracy.pth.tar`. The corresponding
+`best_validation_accuracy.json` and
+`best_validation_balanced_accuracy.json` files record all metrics from the
+selected epoch, including accuracy, balanced accuracy, AUC, and macro F1.
+`best_validation_all.json` combines both records, while the legacy
+`best_validation.json` remains an alias of the metric configured by
+`TEST.BEST_METRIC`.
+
+Search runs rank configurations by validation accuracy and skip the test split.
+Final runs default to the last epoch and evaluate the test split once. Passing
+`-FinalModel best_val` instead evaluates the checkpoint with the highest
+validation accuracy. Both best checkpoints are retained in either mode, and
+the model is trained only once. Shallow is not part of this experiment
+workflow.
 
 Every output directory contains `run_manifest.json`, `console.log`, Dassl's
-`log.txt`, and prompt-only checkpoints. Re-running a command skips complete
-runs and continues the remaining grid.
+`log.txt`, the two best-validation records, and prompt-only checkpoints.
+Re-running a command skips complete runs and continues the remaining grid.

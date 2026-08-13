@@ -40,7 +40,7 @@ def load_json(path):
 
 def run_trial(args, root, stage, candidate, seed):
     output = trial_dir(root, stage, candidate, seed)
-    result_path = output / "best_validation.json"
+    result_path = output / "best_validation_accuracy.json"
     complete_path = output / "search_complete.json"
     final_checkpoint = output / "prompt_parameters" / "model.pth.tar-100"
     log_path = output / "log.txt"
@@ -128,7 +128,16 @@ def run_trial(args, root, stage, candidate, seed):
         tail = (output / "console.log").read_text(encoding="utf-8", errors="replace")[-8000:]
         raise RuntimeError("Trial failed (exit={}):\n{}".format(process.returncode, tail))
     if not result_path.exists():
-        raise RuntimeError("Trial completed without best_validation.json: {}".format(output))
+        raise RuntimeError(
+            "Trial completed without best_validation_accuracy.json: {}".format(output)
+        )
+    balanced_result_path = output / "best_validation_balanced_accuracy.json"
+    if not balanced_result_path.exists():
+        raise RuntimeError(
+            "Trial completed without best_validation_balanced_accuracy.json: {}".format(
+                output
+            )
+        )
     complete_path.write_text(
         json.dumps({"status": "complete", "exit_code": 0}, indent=2),
         encoding="utf-8",

@@ -18,11 +18,18 @@ def run_one(args, tokens, selected, shots, seed):
     method = "CoOp_VPT_Deep_Nv{}".format(tokens)
     output = args.output_root / method / "shots_{}".format(shots) / "seed{}".format(seed)
     final_checkpoint = output / "prompt_parameters" / "model.pth.tar-100"
-    best_checkpoint = output / "prompt_parameters" / "model-best.pth.tar"
+    best_accuracy_checkpoint = (
+        output / "prompt_parameters" / "model-best-accuracy.pth.tar"
+    )
+    best_balanced_accuracy_checkpoint = (
+        output / "prompt_parameters" / "model-best-balanced_accuracy.pth.tar"
+    )
     complete_path = output / "run_complete.json"
-    checkpoint_ready = final_checkpoint.exists()
-    if args.final_model == "best_val":
-        checkpoint_ready = checkpoint_ready and best_checkpoint.exists()
+    checkpoint_ready = (
+        final_checkpoint.exists()
+        and best_accuracy_checkpoint.exists()
+        and best_balanced_accuracy_checkpoint.exists()
+    )
     if complete_path.exists() and checkpoint_ready:
         print(
             "SKIP {} shots={} seed={} (complete)".format(method, shots, seed),
@@ -101,6 +108,20 @@ def run_one(args, tokens, selected, shots, seed):
         )[-8000:]
         raise RuntimeError(
             "Final run failed (exit={}):\n{}".format(process.returncode, tail)
+        )
+    required_outputs = (
+        final_checkpoint,
+        best_accuracy_checkpoint,
+        best_balanced_accuracy_checkpoint,
+        output / "best_validation_accuracy.json",
+        output / "best_validation_balanced_accuracy.json",
+    )
+    missing_outputs = [str(path) for path in required_outputs if not path.exists()]
+    if missing_outputs:
+        raise RuntimeError(
+            "Final run did not produce all required checkpoints/records: {}. "
+            "Use a fresh output directory if this path contains a completed "
+            "legacy run.".format(missing_outputs)
         )
     complete_path.write_text(
         json.dumps({"status": "complete", "exit_code": 0}, indent=2),

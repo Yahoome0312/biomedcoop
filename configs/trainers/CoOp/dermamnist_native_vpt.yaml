@@ -34,6 +34,7 @@ TEST:
   COMPUTE_CMAT: True
   FINAL_MODEL: "last_step"
   BEST_METRIC: "accuracy"
+  SAVE_BEST_METRICS: ["accuracy", "balanced_accuracy"]
   SKIP_FINAL_TEST: False
 
 MODEL:

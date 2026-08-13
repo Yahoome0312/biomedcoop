@@ -218,6 +218,11 @@ _C.TEST.FINAL_MODEL = "last_step"
 # Metric returned by validation and used for best-checkpoint selection.
 # Existing trainers retain accuracy unless a method opts into another metric.
 _C.TEST.BEST_METRIC = "accuracy"
+# Metrics whose best validation checkpoints are retained during one training
+# run. Each epoch performs only one validation pass and all listed metrics are
+# read from that same evaluator result. An empty tuple preserves the original
+# behavior unless FINAL_MODEL="best_val" is requested.
+_C.TEST.SAVE_BEST_METRICS = ()
 
 ###########################
 # Trainer specifics

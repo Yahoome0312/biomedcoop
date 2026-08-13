@@ -1,4 +1,5 @@
 import json
+import shutil
 import time
 import numpy as np
 import os.path as osp
@@ -427,6 +428,8 @@ class SimpleTrainer(TrainerBase):
         self.build_model()
         self.evaluator = build_evaluator(cfg, lab2cname=self.lab2cname)
         self.best_result = -np.inf
+        self.best_results = {}
+        self.best_validation_records = {}
 
     def check_cfg(self, cfg):
         """Check whether some variables are set correctly for
@@ -493,6 +496,8 @@ class SimpleTrainer(TrainerBase):
         if self.cfg.RESUME:
             directory = self.cfg.RESUME
         self.start_epoch = self.resume_model_if_exist(directory)
+        if self.start_epoch > 0:
+            self._restore_best_validation_records(directory)
 
         # Initialize summary writer
         writer_dir = osp.join(self.output_dir, "tensorboard")
@@ -530,34 +535,126 @@ class SimpleTrainer(TrainerBase):
             if self.cfg.TRAIN.CHECKPOINT_FREQ > 0 else False
         )
 
-        if do_test and self.cfg.TEST.FINAL_MODEL == "best_val":
-            curr_result = self.test(split="val")
-            is_best = curr_result > self.best_result
-            if is_best:
-                self.best_result = curr_result
+        tracked_metrics = self._tracked_best_metrics()
+        if do_test and tracked_metrics:
+            if self.val_loader is None:
+                raise RuntimeError(
+                    "Best-checkpoint tracking requires a validation data loader"
+                )
+
+            # Evaluate validation exactly once per epoch. Every tracked metric
+            # below comes from this same prediction/evaluator pass.
+            self.test(split="val")
+            validation_results = {
+                key: float(value)
+                for key, value in self.last_eval_results.items()
+            }
+            missing = [
+                metric for metric in tracked_metrics
+                if metric not in validation_results
+            ]
+            if missing:
+                raise KeyError(
+                    "Tracked validation metrics {} are unavailable; choose from {}".format(
+                        missing, list(validation_results)
+                    )
+                )
+
+            for metric in tracked_metrics:
+                current = validation_results[metric]
+                previous = self.best_results.get(metric, -np.inf)
+                if current <= previous:
+                    continue
+
+                self.best_results[metric] = current
+                if metric == self.cfg.TEST.BEST_METRIC:
+                    self.best_result = current
+
+                checkpoint_name = self._best_checkpoint_name(metric)
                 self.save_model(
                     self.epoch,
                     self.output_dir,
-                    model_name="model-best.pth.tar"
+                    model_name=checkpoint_name,
                 )
-                best_record = {
+                if metric == self.cfg.TEST.BEST_METRIC:
+                    self._copy_legacy_best_checkpoint(checkpoint_name)
+
+                record = {
                     "epoch": self.epoch + 1,
-                    "selection_metric": self.cfg.TEST.BEST_METRIC,
-                    "selection_value": float(curr_result),
-                    "metrics": {
-                        key: float(value)
-                        for key, value in self.last_eval_results.items()
-                    },
+                    "selection_metric": metric,
+                    "selection_value": current,
+                    "checkpoint": checkpoint_name,
+                    "metrics": validation_results,
                 }
-                with open(
-                    osp.join(self.output_dir, "best_validation.json"),
-                    "w",
-                    encoding="utf-8",
-                ) as file:
-                    json.dump(best_record, file, indent=2)
+                self.best_validation_records[metric] = record
+                self._write_best_validation_records()
 
         if meet_checkpoint_freq or last_epoch:
             self.save_model(self.epoch, self.output_dir)
+
+    def _tracked_best_metrics(self):
+        metrics = list(self.cfg.TEST.SAVE_BEST_METRICS)
+        if self.cfg.TEST.FINAL_MODEL == "best_val":
+            metrics.append(self.cfg.TEST.BEST_METRIC)
+        # Preserve user order while preventing duplicate checkpoint work.
+        return tuple(dict.fromkeys(metrics))
+
+    @staticmethod
+    def _metric_file_key(metric):
+        return "".join(
+            character if character.isalnum() or character in {"-", "_"} else "_"
+            for character in str(metric)
+        )
+
+    @classmethod
+    def _best_checkpoint_name(cls, metric):
+        return "model-best-{}.pth.tar".format(cls._metric_file_key(metric))
+
+    @classmethod
+    def _best_record_name(cls, metric):
+        return "best_validation_{}.json".format(cls._metric_file_key(metric))
+
+    def _copy_legacy_best_checkpoint(self, checkpoint_name):
+        """Keep model-best.pth.tar compatible with existing best_val loaders."""
+        for model_name in self.get_model_names():
+            model_dir = osp.join(self.output_dir, model_name)
+            source = osp.join(model_dir, checkpoint_name)
+            destination = osp.join(model_dir, "model-best.pth.tar")
+            shutil.copyfile(source, destination)
+
+    def _write_best_validation_records(self):
+        for metric, record in self.best_validation_records.items():
+            path = osp.join(self.output_dir, self._best_record_name(metric))
+            with open(path, "w", encoding="utf-8") as file:
+                json.dump(record, file, indent=2)
+
+        summary_path = osp.join(self.output_dir, "best_validation_all.json")
+        with open(summary_path, "w", encoding="utf-8") as file:
+            json.dump(self.best_validation_records, file, indent=2)
+
+        # Retain the historical single-record file for callers that select
+        # TEST.BEST_METRIC (normally accuracy).
+        selected_record = self.best_validation_records.get(
+            self.cfg.TEST.BEST_METRIC
+        )
+        if selected_record is not None:
+            legacy_path = osp.join(self.output_dir, "best_validation.json")
+            with open(legacy_path, "w", encoding="utf-8") as file:
+                json.dump(selected_record, file, indent=2)
+
+    def _restore_best_validation_records(self, directory):
+        for metric in self._tracked_best_metrics():
+            path = osp.join(directory, self._best_record_name(metric))
+            if not osp.exists(path):
+                continue
+            with open(path, "r", encoding="utf-8") as file:
+                record = json.load(file)
+            self.best_validation_records[metric] = record
+            self.best_results[metric] = float(record["selection_value"])
+
+        selected_metric = self.cfg.TEST.BEST_METRIC
+        if selected_metric in self.best_results:
+            self.best_result = self.best_results[selected_metric]
 
     @torch.no_grad()
     def output_test(self, split=None):
