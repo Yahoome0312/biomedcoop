@@ -17,6 +17,7 @@ class _DualBestTrainer(SimpleTrainer):
         self.validation_results = iter(validation_results)
         self.validation_calls = 0
         self.saved_checkpoints = []
+        self.saved_epochs = []
         self.cfg = SimpleNamespace(
             TEST=SimpleNamespace(
                 NO_TEST=False,
@@ -38,6 +39,7 @@ class _DualBestTrainer(SimpleTrainer):
 
     def save_model(self, epoch, directory, is_best=False, model_name=""):
         self.saved_checkpoints.append(model_name)
+        self.saved_epochs.append(epoch)
         model_dir = Path(directory) / "prompt_parameters"
         model_dir.mkdir(parents=True, exist_ok=True)
         (model_dir / model_name).write_bytes(b"checkpoint")
@@ -101,3 +103,59 @@ def test_one_validation_pass_tracks_accuracy_and_balanced_accuracy(tmp_path):
     assert balanced_record["metrics"]["macro_f1"] == 57.0
     assert set(combined) == {"accuracy", "balanced_accuracy"}
     assert legacy == accuracy_record
+
+
+def test_resume_restores_both_best_histories(tmp_path):
+    source = _DualBestTrainer(
+        tmp_path,
+        [
+            {
+                "accuracy": 71.0,
+                "balanced_accuracy": 62.0,
+                "auc": 80.0,
+                "macro_f1": 58.0,
+            }
+        ],
+    )
+    source.after_epoch()
+
+    resumed = _DualBestTrainer(tmp_path, [])
+    resumed._restore_best_validation_records(str(tmp_path))
+    assert resumed.best_results == {
+        "accuracy": 71.0,
+        "balanced_accuracy": 62.0,
+    }
+    assert resumed.best_result == 71.0
+    assert set(resumed.best_validation_records) == {
+        "accuracy",
+        "balanced_accuracy",
+    }
+
+
+def test_epoch_zero_is_a_real_dual_selection_candidate(tmp_path):
+    trainer = _DualBestTrainer(
+        tmp_path,
+        [
+            {
+                "accuracy": 68.0,
+                "balanced_accuracy": 64.0,
+                "auc": 82.0,
+                "macro_f1": 56.0,
+            }
+        ],
+    )
+
+    trainer.evaluate_and_track_best(checkpoint_epoch=-1, record_epoch=0)
+
+    assert trainer.validation_calls == 1
+    assert trainer.saved_epochs == [-1, -1]
+    accuracy = json.loads(
+        (tmp_path / "best_validation_accuracy.json").read_text(encoding="utf-8")
+    )
+    balanced = json.loads(
+        (tmp_path / "best_validation_balanced_accuracy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert accuracy["epoch"] == 0
+    assert balanced["epoch"] == 0

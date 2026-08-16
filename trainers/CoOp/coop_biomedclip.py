@@ -164,7 +164,7 @@ class CustomCLIP(nn.Module):
         self.logit_scale = biomedclip_model.logit_scale
         self.dtype = biomedclip_model.text.transformer.dtype
 
-    def forward(self, image):
+    def forward(self, image, return_text_features=False, return_features=False):
         image_features = self.image_encoder(image.type(self.dtype))
 
         prompts = self.prompt_learner()
@@ -177,6 +177,10 @@ class CustomCLIP(nn.Module):
         logit_scale = self.logit_scale.exp()
         logits = logit_scale * image_features @ text_features.t()
 
+        if return_features:
+            return logits, text_features, image_features
+        if return_text_features:
+            return logits, text_features
         return logits
 
 @TRAINER_REGISTRY.register()

@@ -537,60 +537,74 @@ class SimpleTrainer(TrainerBase):
 
         tracked_metrics = self._tracked_best_metrics()
         if do_test and tracked_metrics:
-            if self.val_loader is None:
-                raise RuntimeError(
-                    "Best-checkpoint tracking requires a validation data loader"
-                )
-
-            # Evaluate validation exactly once per epoch. Every tracked metric
-            # below comes from this same prediction/evaluator pass.
-            self.test(split="val")
-            validation_results = {
-                key: float(value)
-                for key, value in self.last_eval_results.items()
-            }
-            missing = [
-                metric for metric in tracked_metrics
-                if metric not in validation_results
-            ]
-            if missing:
-                raise KeyError(
-                    "Tracked validation metrics {} are unavailable; choose from {}".format(
-                        missing, list(validation_results)
-                    )
-                )
-
-            for metric in tracked_metrics:
-                current = validation_results[metric]
-                previous = self.best_results.get(metric, -np.inf)
-                if current <= previous:
-                    continue
-
-                self.best_results[metric] = current
-                if metric == self.cfg.TEST.BEST_METRIC:
-                    self.best_result = current
-
-                checkpoint_name = self._best_checkpoint_name(metric)
-                self.save_model(
-                    self.epoch,
-                    self.output_dir,
-                    model_name=checkpoint_name,
-                )
-                if metric == self.cfg.TEST.BEST_METRIC:
-                    self._copy_legacy_best_checkpoint(checkpoint_name)
-
-                record = {
-                    "epoch": self.epoch + 1,
-                    "selection_metric": metric,
-                    "selection_value": current,
-                    "checkpoint": checkpoint_name,
-                    "metrics": validation_results,
-                }
-                self.best_validation_records[metric] = record
-                self._write_best_validation_records()
+            self.evaluate_and_track_best(
+                checkpoint_epoch=self.epoch,
+                record_epoch=self.epoch + 1,
+            )
 
         if meet_checkpoint_freq or last_epoch:
             self.save_model(self.epoch, self.output_dir)
+
+    def evaluate_and_track_best(self, checkpoint_epoch, record_epoch):
+        """Run validation once and update every configured best checkpoint.
+
+        ``checkpoint_epoch`` follows the zero-based convention expected by
+        :meth:`save_model`, whereas ``record_epoch`` is the user-facing epoch
+        written to JSON. Passing ``(-1, 0)`` therefore records a warm-start
+        initialization without pretending that an optimization epoch ran.
+        """
+
+        tracked_metrics = self._tracked_best_metrics()
+        if not tracked_metrics:
+            return {}
+        if self.val_loader is None:
+            raise RuntimeError(
+                "Best-checkpoint tracking requires a validation data loader"
+            )
+
+        self.test(split="val")
+        validation_results = {
+            key: float(value) for key, value in self.last_eval_results.items()
+        }
+        missing = [
+            metric for metric in tracked_metrics if metric not in validation_results
+        ]
+        if missing:
+            raise KeyError(
+                "Tracked validation metrics {} are unavailable; choose from {}".format(
+                    missing, list(validation_results)
+                )
+            )
+
+        for metric in tracked_metrics:
+            current = validation_results[metric]
+            previous = self.best_results.get(metric, -np.inf)
+            if current <= previous:
+                continue
+
+            self.best_results[metric] = current
+            if metric == self.cfg.TEST.BEST_METRIC:
+                self.best_result = current
+
+            checkpoint_name = self._best_checkpoint_name(metric)
+            self.save_model(
+                int(checkpoint_epoch),
+                self.output_dir,
+                model_name=checkpoint_name,
+            )
+            if metric == self.cfg.TEST.BEST_METRIC:
+                self._copy_legacy_best_checkpoint(checkpoint_name)
+
+            record = {
+                "epoch": int(record_epoch),
+                "selection_metric": metric,
+                "selection_value": current,
+                "checkpoint": checkpoint_name,
+                "metrics": validation_results,
+            }
+            self.best_validation_records[metric] = record
+            self._write_best_validation_records()
+        return validation_results
 
     def _tracked_best_metrics(self):
         metrics = list(self.cfg.TEST.SAVE_BEST_METRICS)
