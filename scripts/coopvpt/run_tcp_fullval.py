@@ -1,4 +1,4 @@
-"""Run and compare the fixed CoOp+VPT-Deep+TCP experiment.
+"""Run the final reported TextDeep + MT-TCP LayerBasis + XProto experiment.
 
 The model is trained once per seed. Both best-validation-ACC and
 best-validation-BACC prompt bundles are then loaded and evaluated on test.
@@ -24,21 +24,10 @@ for path in (REPO, DASSL):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-METHOD = "CoOp_VPT_Deep_TCP_Nv4_Ntke4"
-BASELINE_METHOD = "CoOp_VPT_Deep_Nv4"
+METHOD = "CoOp_VPT_Deep_TextDeep_MT-TCP_LayerBasis_XProto_Nv4_Nt4_K50"
+BASELINE_METHOD = "CoOp_VPT_Deep_TextDeep_Nv4_Nt4"
 SELECTION_METRICS = ("accuracy", "balanced_accuracy")
 CORE_METRICS = ("accuracy", "balanced_accuracy", "auc", "macro_f1")
-
-
-INTERNAL_TEXT_PROMPT_CONNECTIONS = {
-    "late_residual",
-    "late_norm_residual",
-    "late_centered_norm_residual",
-    "late_centered_classlayer_norm_residual",
-    "late_replace",
-    "all_residual",
-    "original_coop_replace",
-}
 
 
 def _read_json(path):
@@ -192,11 +181,7 @@ def _train_args(args):
         config_file=str(
             REPO
             / "configs/trainers/CoOp"
-            / (
-                "dermamnist_native_vpt_multitext_tcp.yaml"
-                if args.prior_source == "biomedcoop_50"
-                else "dermamnist_native_vpt_tcp.yaml"
-            )
+            / "dermamnist_native_vpt_multitext_tcp.yaml"
         ),
         eval_only=False,
         model_dir="",
@@ -212,55 +197,9 @@ def _train_args(args):
             "OPTIM.LR", "0.005",
             "TRAINER.COOPVPT.OPTIM.LR", "0.005",
             "TRAIN.CHECKPOINT_FREQ", str(args.checkpoint_freq),
-            "TRAINER.TCP.FUSION_MODE", args.fusion_mode,
-            "TRAINER.TCP.FUSION_WEIGHT", str(args.fusion_weight),
-            "TRAINER.TCP.KG_WEIGHT", str(args.kg_weight),
-            "TRAINER.TCP.KG_MODE", args.kg_mode,
-            "TRAINER.TCP.PRIOR_SOURCE", args.prior_source,
-            "TRAINER.TCP.DESCRIPTION_COUNT", str(args.description_count),
-            "TRAINER.TCP.DESCRIPTION_BATCH_SIZE", str(args.description_batch_size),
             "TRAINER.TCP.DESCRIPTION_CACHE", str(args.description_cache),
             "TRAINER.TCP.LAYER_DESCRIPTION_CACHE",
             str(args.layer_description_cache),
-            "TRAINER.TCP.PRIOR_REPRESENTATION", args.prior_representation,
-            "TRAINER.TCP.AGGREGATION", args.aggregation,
-            "TRAINER.TCP.CONNECTION", args.connection,
-            "TRAINER.TCP.CONSENSUS_TEMPERATURE", str(args.consensus_temperature),
-            "TRAINER.TCP.GATE_INIT", str(args.gate_init),
-            "TRAINER.TCP.RESIDUAL_WARMUP_EPOCHS",
-            str(args.residual_warmup_epochs),
-            "TRAINER.TCP.PROMPT_ANCHOR_WEIGHT",
-            str(args.prompt_anchor_weight),
-            "TRAINER.TCP.PROMPT_ANCHOR_L2_WEIGHT",
-            str(args.prompt_anchor_l2_weight),
-            "TRAINER.TCP.EVAL_WARMSTART",
-            "True" if args.eval_warmstart else "False",
-            "TRAINER.TCP.DESCRIPTION_KD_WEIGHT",
-            str(args.description_kd_weight),
-            "TRAINER.TCP.DESCRIPTION_KD_TEMPERATURE",
-            str(args.description_kd_temperature),
-            "TRAINER.TCP.DESCRIPTION_KD_TAU",
-            str(args.description_kd_tau),
-            "TRAINER.TCP.IMAGE_PRIOR_WEIGHT",
-            str(args.image_prior_weight),
-            "TRAINER.TCP.PRIOR_CONTRASTIVE_WEIGHT",
-            str(args.prior_contrastive_weight),
-            "TRAINER.TCP.PRIOR_CONTRASTIVE_TEMPERATURE",
-            str(args.prior_contrastive_temperature),
-            "TRAINER.TCP.LAYER_TOKEN_ALIGNMENT_WEIGHT",
-            str(args.layer_token_alignment_weight),
-            "TRAINER.TCP.CROSS_MODAL_PROTO_WEIGHT",
-            str(args.cross_modal_proto_weight),
-            "TRAINER.TCP.CROSS_MODAL_PROTO_TEMPERATURE",
-            str(args.cross_modal_proto_temperature),
-            "TRAINER.TCP.HARD_NEGATIVE_MARGIN_WEIGHT",
-            str(args.hard_negative_margin_weight),
-            "TRAINER.TCP.HARD_NEGATIVE_MARGIN",
-            str(args.hard_negative_margin),
-            "TRAINER.TCP.HARD_NEGATIVE_TEMPERATURE",
-            str(args.hard_negative_temperature),
-            "TRAINER.TCP.BASE_PROMPT_FREEZE_EPOCHS",
-            str(args.base_prompt_freeze_epochs),
             "TRAINER.TCP.INIT_BASELINE_CHECKPOINT",
             str(args.init_baseline_checkpoint or ""),
         ],
@@ -426,24 +365,13 @@ def run_worker(args):
         "visual_vpt": {"mode": "deep", "tokens": 4},
         "ctx_init": "a photo of a",
         "selection_metrics": list(SELECTION_METRICS),
-        "loss": "CE + {} * KG[{}] + {} * prompt_anchor(cosine + {} * relative_L2) + {} * description_KD + {} * image_prior_CE + {} * prior_contrastive(T={}) + {} * layer_token_alignment + {} * cross_modal_proto(T={}) + {} * hard_negative_margin(m={}, T={})".format(
-            args.kg_weight,
-            args.kg_mode,
-            args.prompt_anchor_weight,
-            args.prompt_anchor_l2_weight,
-            args.description_kd_weight,
-            args.image_prior_weight,
-            args.prior_contrastive_weight,
-            args.prior_contrastive_temperature,
-            args.layer_token_alignment_weight,
-            args.cross_modal_proto_weight,
-            args.cross_modal_proto_temperature,
-            args.hard_negative_margin_weight,
-            args.hard_negative_margin,
-            args.hard_negative_temperature,
+        "loss": (
+            "CE + 4.0 * KG[centered_cosine] + 4.0 * "
+            "prompt_anchor(cosine + 0.5 * relative_L2) + "
+            "0.5 * cross_modal_proto(T=0.1)"
         ),
-        "tcp_knowledge_loss_mode": args.kg_mode,
-        "tcp_prior_representation": args.prior_representation,
+        "tcp_knowledge_loss_mode": "centered_cosine",
+        "tcp_prior_representation": "layer_cls",
         "single_model_only": True,
         "shot_specific_hyperparameters": False,
         "baseline_prompt_initialization": (
@@ -451,66 +379,24 @@ def run_worker(args):
                 "checkpoint": str(args.init_baseline_checkpoint),
                 "selection": args.init_baseline_selection,
                 "sha256": _sha256_file(args.init_baseline_checkpoint),
-                "copied_parameters": (
-                    [
-                        "prompt_learner.ctx",
-                        "visual_prompt.prompt_embeddings",
-                        "text_prompt.prompt_embeddings -> tcp.text_prompt.prompt_embeddings",
-                    ]
-                    if args.connection in INTERNAL_TEXT_PROMPT_CONNECTIONS
-                    else [
-                        "prompt_learner.ctx",
-                        "visual_prompt.prompt_embeddings",
-                    ]
-                ),
+                "copied_parameters": [
+                    "prompt_learner.ctx",
+                    "visual_prompt.prompt_embeddings",
+                    "text_prompt.prompt_embeddings -> tcp.text_prompt.prompt_embeddings",
+                ],
                 "optimizer_state_loaded": False,
             }
             if args.init_baseline_checkpoint
             else None
         ),
-        "tcp_residual_warmup_epochs": args.residual_warmup_epochs,
-        "tcp_prompt_anchor_weight": args.prompt_anchor_weight,
-        "tcp_prompt_anchor_l2_weight": args.prompt_anchor_l2_weight,
-        "tcp_eval_warmstart_epoch0": bool(args.eval_warmstart),
-        "base_prompt_freeze_epochs": args.base_prompt_freeze_epochs,
-        "description_kd": {
-            "weight": args.description_kd_weight,
-            "temperature": args.description_kd_temperature,
-            "robust_selection_tau": args.description_kd_tau,
-            "training_only": True,
-            "inference_logit_fusion": False,
-        },
-        "image_description_prior": {
-            "weight": args.image_prior_weight,
-            "training_only": True,
-            "updates": "same Visual VPT branch",
-            "inference_logit_fusion": False,
-        },
-        "prior_contrastive": {
-            "weight": args.prior_contrastive_weight,
-            "temperature": args.prior_contrastive_temperature,
-            "frozen_targets": "50-description class-mean priors",
-            "inference_logit_fusion": False,
-        },
-        "layer_token_alignment": {
-            "weight": args.layer_token_alignment_weight,
-            "target": "four layer-8 facets from five ordered groups of ten descriptions",
-            "uses_all_50_descriptions": True,
-            "inference_logit_fusion": False,
-        },
+        "tcp_residual_warmup_epochs": 10,
+        "tcp_prompt_anchor_weight": 4.0,
+        "tcp_prompt_anchor_l2_weight": 0.5,
+        "tcp_eval_warmstart_epoch0": True,
         "cross_modal_prototype": {
-            "weight": args.cross_modal_proto_weight,
-            "temperature": args.cross_modal_proto_temperature,
+            "weight": 0.5,
+            "temperature": 0.1,
             "class_balanced_batch_centroids": True,
-            "training_only": True,
-            "inference_logit_fusion": False,
-        },
-        "hard_negative_margin": {
-            "weight": args.hard_negative_margin_weight,
-            "cosine_margin": args.hard_negative_margin,
-            "temperature": args.hard_negative_temperature,
-            "class_balanced": True,
-            "negative": "single most-confusable wrong text prototype",
             "training_only": True,
             "inference_logit_fusion": False,
         },
@@ -577,44 +463,8 @@ def launch(args):
                 "--method", args.method,
                 "--baseline-method", args.baseline_method,
                 "--init-baseline-selection", args.init_baseline_selection,
-                "--fusion-mode", args.fusion_mode,
-                "--fusion-weight", str(args.fusion_weight),
-                "--kg-weight", str(args.kg_weight),
-                "--kg-mode", args.kg_mode,
-                "--prior-source", args.prior_source,
-                "--description-count", str(args.description_count),
-                "--description-batch-size", str(args.description_batch_size),
                 "--description-cache", str(args.description_cache),
                 "--layer-description-cache", str(args.layer_description_cache),
-                "--prior-representation", args.prior_representation,
-                "--aggregation", args.aggregation,
-                "--connection", args.connection,
-                "--consensus-temperature", str(args.consensus_temperature),
-                "--gate-init", str(args.gate_init),
-                "--residual-warmup-epochs", str(args.residual_warmup_epochs),
-                "--prompt-anchor-weight", str(args.prompt_anchor_weight),
-                "--prompt-anchor-l2-weight", str(args.prompt_anchor_l2_weight),
-                "--description-kd-weight", str(args.description_kd_weight),
-                "--description-kd-temperature", str(args.description_kd_temperature),
-                "--description-kd-tau", str(args.description_kd_tau),
-                "--image-prior-weight", str(args.image_prior_weight),
-                "--prior-contrastive-weight", str(args.prior_contrastive_weight),
-                "--prior-contrastive-temperature",
-                str(args.prior_contrastive_temperature),
-                "--layer-token-alignment-weight",
-                str(args.layer_token_alignment_weight),
-                "--cross-modal-proto-weight",
-                str(args.cross_modal_proto_weight),
-                "--cross-modal-proto-temperature",
-                str(args.cross_modal_proto_temperature),
-                "--hard-negative-margin-weight",
-                str(args.hard_negative_margin_weight),
-                "--hard-negative-margin",
-                str(args.hard_negative_margin),
-                "--hard-negative-temperature",
-                str(args.hard_negative_temperature),
-                "--base-prompt-freeze-epochs",
-                str(args.base_prompt_freeze_epochs),
                 "--summary-prefix", args.summary_prefix,
             ]
             if args.init_baseline_root:
@@ -632,8 +482,6 @@ def launch(args):
                 )
             if args.validation_only:
                 command.append("--validation-only")
-            if args.eval_warmstart:
-                command.append("--eval-warmstart")
             if args.evaluate_existing:
                 command.append("--evaluate-existing")
             if args.force:
@@ -1134,7 +982,7 @@ def parse_args():
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=REPO / "output" / "dermamnist_fullval_acc_bacc",
+        default=REPO / "output" / "tcp_textbaseline_layerbasis_xproto_full100",
     )
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--python", default=r"D:\Anaconda\python.exe")
@@ -1152,21 +1000,6 @@ def parse_args():
         choices=SELECTION_METRICS,
         default="balanced_accuracy",
     )
-    parser.add_argument("--fusion-mode", choices=("replace", "gated_residual"), default="replace")
-    parser.add_argument("--fusion-weight", type=float, default=1.0)
-    parser.add_argument("--kg-weight", type=float, default=8.0)
-    parser.add_argument(
-        "--kg-mode",
-        choices=("raw_cosine", "centered_cosine"),
-        default="raw_cosine",
-    )
-    parser.add_argument(
-        "--prior-source",
-        choices=("single_template", "biomedcoop_50"),
-        default="single_template",
-    )
-    parser.add_argument("--description-count", type=int, default=50)
-    parser.add_argument("--description-batch-size", type=int, default=64)
     parser.add_argument(
         "--description-cache",
         type=Path,
@@ -1183,73 +1016,10 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--prior-representation",
-        choices=("projected_text", "layer_cls"),
-        default="projected_text",
+        "--summary-prefix", default="full100_layerbasis_xproto_validation"
     )
-    parser.add_argument(
-        "--aggregation",
-        choices=(
-            "feature_mean",
-            "tke_mean",
-            "consensus_weighted",
-            "set_attention",
-            "cosine_set_attention",
-            "grouped10_cosine_attention",
-            "grouped10_layer_residual",
-            "grouped10_layer_projected_hybrid",
-            "grouped10_layer_projected_residual",
-            "layer_cosine_set_hybrid",
-            "layer_cosine_set_hybrid_light",
-            "layer_cosine_set_residual",
-        ),
-        default="feature_mean",
-    )
-    parser.add_argument(
-        "--connection",
-        choices=(
-            "late_residual",
-            "late_norm_residual",
-            "late_centered_norm_residual",
-            "late_centered_classlayer_norm_residual",
-            "inplace_once_norm_residual",
-            "inplace_once_centered_norm_residual",
-            "inplace_once_centered_classgate_norm_residual",
-            "inplace_deep_centered_norm_residual",
-            "inplace_deep_ramped_centered_norm_residual",
-            "inplace_deep_balanced_ramp_centered_norm_residual",
-            "inplace_deep_terminal_boost_centered_norm_residual",
-            "inplace_deep_terminal_peak_centered_norm_residual",
-            "late_replace",
-            "all_residual",
-            "original_coop_replace",
-        ),
-        default="late_residual",
-    )
-    parser.add_argument("--consensus-temperature", type=float, default=0.07)
-    parser.add_argument("--gate-init", type=float, default=0.1)
-    parser.add_argument("--residual-warmup-epochs", type=int, default=0)
-    parser.add_argument("--prompt-anchor-weight", type=float, default=0.0)
-    parser.add_argument("--prompt-anchor-l2-weight", type=float, default=0.0)
-    parser.add_argument("--eval-warmstart", action="store_true")
-    parser.add_argument("--description-kd-weight", type=float, default=0.0)
-    parser.add_argument("--description-kd-temperature", type=float, default=1.5)
-    parser.add_argument("--description-kd-tau", type=float, default=1.5)
-    parser.add_argument("--image-prior-weight", type=float, default=0.0)
-    parser.add_argument("--prior-contrastive-weight", type=float, default=0.0)
-    parser.add_argument(
-        "--prior-contrastive-temperature", type=float, default=0.1
-    )
-    parser.add_argument("--layer-token-alignment-weight", type=float, default=0.0)
-    parser.add_argument("--cross-modal-proto-weight", type=float, default=0.0)
-    parser.add_argument("--cross-modal-proto-temperature", type=float, default=0.1)
-    parser.add_argument("--hard-negative-margin-weight", type=float, default=0.0)
-    parser.add_argument("--hard-negative-margin", type=float, default=0.05)
-    parser.add_argument("--hard-negative-temperature", type=float, default=0.02)
-    parser.add_argument("--base-prompt-freeze-epochs", type=int, default=0)
-    parser.add_argument("--summary-prefix", default="tcp_fullgrid")
     parser.add_argument("--shots", nargs="+", type=int, default=(4, 8, 16, 32))
-    parser.add_argument("--seeds", nargs="+", type=int, default=(1, 2, 3, 4, 5))
+    parser.add_argument("--seeds", nargs="+", type=int, default=(1, 2, 3))
     parser.add_argument("--seed", type=int)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=32)

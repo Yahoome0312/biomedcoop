@@ -134,67 +134,25 @@ def extend_cfg(cfg):
     cfg.TRAINER.COOPVPT.OPTIM.WARMUP_TYPE = "constant"
     cfg.TRAINER.COOPVPT.OPTIM.WARMUP_CONS_LR = 1e-5
 
-    # Textual-based Class-aware Prompt tuning (TCP). These settings are kept
-    # separate so disabling TCP preserves the original CoOp+VPT code path.
+    # Final reported multi-description TCP path (LayerBasis + XProto).
+    # Disabling it preserves the original CoOp+VPT code path.
     cfg.TRAINER.TCP = CN()
     cfg.TRAINER.TCP.ENABLED = False
     cfg.TRAINER.TCP.NUM_TOKENS = 4
     cfg.TRAINER.TCP.BOTTLENECK_DIM = 128
     cfg.TRAINER.TCP.INSERT_LAYER = 8
-    cfg.TRAINER.TCP.FUSION_MODE = "replace"
-    cfg.TRAINER.TCP.FUSION_WEIGHT = 1.0
-    cfg.TRAINER.TCP.KG_WEIGHT = 8.0
-    cfg.TRAINER.TCP.KG_MODE = "raw_cosine"
-    cfg.TRAINER.TCP.PRIOR_TEMPLATE = "a photo of a {}."
-    cfg.TRAINER.TCP.PRIOR_SOURCE = "single_template"
     cfg.TRAINER.TCP.DESCRIPTION_COUNT = 50
     cfg.TRAINER.TCP.DESCRIPTION_BATCH_SIZE = 64
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = ""
     cfg.TRAINER.TCP.LAYER_DESCRIPTION_CACHE = ""
-    cfg.TRAINER.TCP.PRIOR_REPRESENTATION = "projected_text"
-    cfg.TRAINER.TCP.AGGREGATION = "feature_mean"
-    cfg.TRAINER.TCP.CONNECTION = "late_residual"
-    cfg.TRAINER.TCP.CONSENSUS_TEMPERATURE = 0.07
-    cfg.TRAINER.TCP.GATE_INIT = 0.1
-    cfg.TRAINER.TCP.RESIDUAL_WARMUP_EPOCHS = 0
-    # Optional warm-start trust region. It penalizes directional drift of the
-    # existing CoOp/VPT prompts while the new TCP branch is learned.
-    cfg.TRAINER.TCP.PROMPT_ANCHOR_WEIGHT = 0.0
-    # Optional scale-aware term inside the same prompt trust region. The
-    # squared distance is normalized by the frozen baseline parameter energy.
-    cfg.TRAINER.TCP.PROMPT_ANCHOR_L2_WEIGHT = 0.0
-    # Include the exact, zero-residual warm-start as epoch 0 in both best-model
-    # histories. This is an early-stopping candidate, not another model.
-    cfg.TRAINER.TCP.EVAL_WARMSTART = False
-    cfg.TRAINER.TCP.DESCRIPTION_KD_WEIGHT = 0.0
-    cfg.TRAINER.TCP.DESCRIPTION_KD_TEMPERATURE = 1.5
-    cfg.TRAINER.TCP.DESCRIPTION_KD_TAU = 1.5
-    # Training-only image-to-description-prior supervision. It updates the
-    # same visual prompt branch and is absent from inference logits.
-    cfg.TRAINER.TCP.IMAGE_PRIOR_WEIGHT = 0.0
-    # Optional internal cross-class alignment: each learned text prototype is
-    # contrasted against all frozen 50-description class priors.
-    cfg.TRAINER.TCP.PRIOR_CONTRASTIVE_WEIGHT = 0.0
-    cfg.TRAINER.TCP.PRIOR_CONTRASTIVE_TEMPERATURE = 0.1
-    # Optional layer-8 token supervision from five ordered groups of ten
-    # BiomedCoOp descriptions. Available only with the layer_cls bank.
-    cfg.TRAINER.TCP.LAYER_TOKEN_ALIGNMENT_WEIGHT = 0.0
-    # Training-only, class-balanced alignment between per-batch image
-    # centroids and the same model's learned text prototypes. No inference
-    # branch or logit fusion is introduced.
-    cfg.TRAINER.TCP.CROSS_MODAL_PROTO_WEIGHT = 0.0
+    cfg.TRAINER.TCP.GATE_INIT = 0.05
+    cfg.TRAINER.TCP.KG_WEIGHT = 4.0
+    cfg.TRAINER.TCP.RESIDUAL_WARMUP_EPOCHS = 10
+    cfg.TRAINER.TCP.PROMPT_ANCHOR_WEIGHT = 4.0
+    cfg.TRAINER.TCP.PROMPT_ANCHOR_L2_WEIGHT = 0.5
+    cfg.TRAINER.TCP.EVAL_WARMSTART = True
+    cfg.TRAINER.TCP.CROSS_MODAL_PROTO_WEIGHT = 0.5
     cfg.TRAINER.TCP.CROSS_MODAL_PROTO_TEMPERATURE = 0.1
-    # Training-only class-balanced ranking constraint on the same cosine
-    # logits used by the classifier. It adds no inference branch or logits.
-    cfg.TRAINER.TCP.HARD_NEGATIVE_MARGIN_WEIGHT = 0.0
-    cfg.TRAINER.TCP.HARD_NEGATIVE_MARGIN = 0.05
-    cfg.TRAINER.TCP.HARD_NEGATIVE_TEMPERATURE = 0.02
-    # Optional single-run settling phase: the optimizer still owns all three
-    # prompt groups, but only TKE is stepped for the first N epochs.
-    cfg.TRAINER.TCP.BASE_PROMPT_FREEZE_EPOCHS = 0
-    # Optional one-time initialization of CoOp and Visual VPT from a matching
-    # baseline prompt bundle. This is not a resume: TCP stays newly initialized
-    # and optimizer/scheduler state always starts from epoch zero.
     cfg.TRAINER.TCP.INIT_BASELINE_CHECKPOINT = ""
 
     cfg.TRAINER.COCOOP = CN()
