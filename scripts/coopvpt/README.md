@@ -1,9 +1,92 @@
 # DermaMNIST CoOp + VPT-Deep experiments
 
+## Current from-scratch MT-TCP + soft confusion protocol
+
+The current retained MT-TCP baseline jointly trains CoOp, Visual Deep Prompt,
+MT-TCP and its internal TextDeep prompts from epoch 1. Historical TextDeep
+warm-start checkpoints and KG/anchor/XProto losses are not used.
+
+Build support-only Soft Banks:
+
+```powershell
+python scripts/coopvpt/build_confusion_prior.py `
+  --data-root D:\Data\dermamnist `
+  --output-root output\soft_confusion_banks `
+  --shots 4 8 16 32 --seeds 1 2 3
+```
+
+Train the from-scratch MT-TCP B0 validation grid, then independently test the
+best-validation-ACC and best-validation-BACC checkpoints:
+
+```powershell
+python scripts/coopvpt/run_tcp_fullval.py `
+  --data-root D:\Data\dermamnist `
+  --output-root output\confusion_aware_from_scratch `
+  --variant b0 --shots 4 8 16 32 --seeds 1 2 3 `
+  --epochs 100 --validation-only
+
+python scripts/coopvpt/run_tcp_fullval.py `
+  --data-root D:\Data\dermamnist `
+  --output-root output\confusion_aware_from_scratch `
+  --variant b0 --shots 4 8 16 32 --seeds 1 2 3 `
+  --epochs 100 --evaluate-existing
+```
+
+Run all ablations with the same support and seeds:
+
+```powershell
+$variants = 'pair','semantic','semantic_global','semantic_local','global_local','full'
+foreach ($variant in $variants) {
+  python scripts/coopvpt/run_tcp_fullval.py `
+    --data-root D:\Data\dermamnist `
+    --output-root output\confusion_aware_from_scratch `
+    --bank-root output\soft_confusion_banks `
+    --variant $variant --shots 4 8 16 32 --seeds 1 2 3 `
+    --epochs 100 --validation-only
+
+  python scripts/coopvpt/run_tcp_fullval.py `
+    --data-root D:\Data\dermamnist `
+    --output-root output\confusion_aware_from_scratch `
+    --bank-root output\soft_confusion_banks `
+    --variant $variant --shots 4 8 16 32 --seeds 1 2 3 `
+    --epochs 100 --evaluate-existing
+}
+```
+
+Aggregate all seven completed variants, including both checkpoint-selection
+rules, per-seed/per-class metrics, parameter counts and the full gate audit:
+
+```powershell
+python scripts/coopvpt/aggregate_confusion_results.py `
+  --root output\confusion_aware_from_scratch `
+  --bank-root output\soft_confusion_banks
+```
+
+Every run saves both selection checkpoints, raw/normalized confusion matrices,
+per-class recall, compressed pair/gate analysis, loss terms, parameter counts,
+initialization fingerprints, and per-seed/mean±std summaries.
+The aggregate report additionally exposes the soft-prior matrix and hard-count
+diagnostic, selected-pair frequencies/coverage, selected prior and score,
+training `L_confuse` (overall and epoch-100), and aggregate raw/normalized
+confusion matrices in `experiment_report.md` and `experiment_report.json`.
+
 The trainer is `CoOpVPT_BiomedCLIP`. CoOp, Visual VPT and optional TextDeep
 prompts share one AdamW optimizer, one scheduler and one learning rate. Few-shot
 sampling applies only to training; validation uses the complete official split
 with its natural class distribution.
+
+To export the complete B₀/full tables (including B₀ confusion matrices, all
+per-class recalls, per-seed values, full pair/loss diagnostics and matrix file
+links) from an already completed output tree:
+
+```powershell
+python scripts/coopvpt/export_b0_full_metrics.py `
+  --report output\confusion_aware_from_scratch\experiment_report.json `
+  --output-dir output\confusion_aware_from_scratch
+```
+
+This writes `b0_full_metrics.md` and `b0_full_metrics.json`; it does not rerun
+training or evaluation.
 
 Every training run performs one validation pass per epoch and retains the best
 validation-ACC and best validation-BACC prompt checkpoints from that same
@@ -24,44 +107,10 @@ D:\Anaconda\python.exe scripts\coopvpt\aggregate_results.py
 python scripts\coopvpt\reproduce_text_deep_dermamnist.py
 ```
 
-## Final retained MT-TCP method
+## Legacy MT-TCP results
 
-Only the reported configuration remains in production code:
-
-`CoOp_VPT_Deep_TextDeep_MT-TCP_LayerBasis_XProto_Nv4_Nt4_K50`
-
-- CoOp tokens `Nc=4`, Visual VPT-Deep tokens `Nv=4`, internal TextDeep tokens
-  `Nt=4`;
-- 50 fixed BiomedCoOp descriptions per class;
-- descriptions encoded in the frozen PubMedBERT representation before block 8;
-- five ordered groups of ten descriptions produce four layer-aligned bases;
-- a zero-initialized `768 -> 128 -> 4x768` QuickGELU residual TKE;
-- centered, norm-matched residual injection before BERT blocks 8--11;
-- gate initialization `0.05` and ten-epoch residual warm-up;
-- TextDeep baseline initialization selected by validation BACC;
-- `CE + 4*centered-KG + 4*prompt-anchor + 0.5*cross-modal-prototype`;
-- AdamW, LR `0.005`, weight decay `0.0005`, 100 epochs;
-- one fused model and the same image/text similarity logits for train, val and
-  test.
-
-The runner defaults to the reported 4/8/16/32-shot, seeds 1/2/3 grid:
-
-```powershell
-D:\Anaconda\python.exe scripts\coopvpt\run_tcp_fullval.py `
-  --init-baseline-root output\dermamnist_fullval_acc_bacc `
-  --comparison-baseline-root output\dermamnist_fullval_acc_bacc
-```
-
-For strict test isolation, first add `--validation-only`; after the frozen
-validation gate passes, rerun with `--evaluate-existing`. The second command
-loads the already-trained ACC/BACC checkpoints and never retrains the model.
-
-On the 12 paired test runs, the supported best-validation-ACC selection changed
-BACC by `+2.76`, AUC by `+1.56`, macro-F1 by `+2.60`, and ACC by `-0.27`
-percentage points relative to the same-shot, same-seed TextDeep baseline. The
-separately retained best-validation-BACC selection did not establish an
-improvement and is kept only for audit.
-
-Historical failed TCP variants remain recoverable from Git commit `b14f6e9`;
-their search/refinement entry points are intentionally absent from the current
-code.
+Earlier LayerBasis+XProto runs used a TextDeep checkpoint warm-start and extra
+KG/anchor/prototype losses. Those outputs remain historical artifacts only and
+are incompatible with the current runner's `from_scratch_joint_ce` checkpoint
+metadata. The current trainer rejects them rather than silently mixing the two
+protocols.

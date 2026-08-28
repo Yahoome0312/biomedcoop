@@ -163,24 +163,54 @@ class CustomCLIP(nn.Module):
         self.text_encoder = TextEncoder(biomedclip_model)
         self.logit_scale = biomedclip_model.logit_scale
         self.dtype = biomedclip_model.text.transformer.dtype
+        self.confusion_adapter = None
 
-    def forward(self, image, return_text_features=False, return_features=False):
-        image_features = self.image_encoder(image.type(self.dtype))
+    def forward(
+        self,
+        image,
+        return_text_features=False,
+        return_features=False,
+        return_confusion_details=False,
+    ):
+        needs_tokens = (
+            self.confusion_adapter is not None
+            and self.confusion_adapter.needs_patch_tokens
+        )
+        if needs_tokens:
+            image_features, patch_tokens = self.image_encoder(
+                image.type(self.dtype), return_tokens=True
+            )
+        else:
+            image_features = self.image_encoder(image.type(self.dtype))
+            patch_tokens = None
 
         prompts = self.prompt_learner()
         tokenized_prompts = self.tokenized_prompts
         text_features = self.text_encoder(prompts,tokenized_prompts)
 
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        normalized_images = image_features / image_features.norm(dim=-1, keepdim=True)
+        normalized_text = text_features / text_features.norm(dim=-1, keepdim=True)
 
         logit_scale = self.logit_scale.exp()
-        logits = logit_scale * image_features @ text_features.t()
+        base_logits = logit_scale * normalized_images @ normalized_text.t()
+        details = None
+        if self.confusion_adapter is None:
+            logits = base_logits
+        else:
+            logits, details = self.confusion_adapter(
+                image_features,
+                patch_tokens,
+                text_features,
+                base_logits,
+                logit_scale,
+            )
 
         if return_features:
-            return logits, text_features, image_features
+            return logits, normalized_text, normalized_images
         if return_text_features:
-            return logits, text_features
+            return logits, normalized_text
+        if return_confusion_details:
+            return logits, details, base_logits
         return logits
 
 @TRAINER_REGISTRY.register()

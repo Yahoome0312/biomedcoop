@@ -1,16 +1,11 @@
 import os
 
-import pytest
 import torch
 from torch import nn
 from timm.models.vision_transformer import VisionTransformer
 
 from models.biomedclip_loader import load_biomedclip
 from models.vpt import TimmViTVisualPromptEncoder
-from trainers.CoOp.coop_vpt_biomedclip import (
-    checkpoint_residual_scale,
-    cosine_l2_prompt_anchor_loss,
-)
 
 
 class _TinyTimmVisual(nn.Module):
@@ -53,6 +48,15 @@ def test_vpt_deep_keeps_sequence_length_and_output_contract():
     assert lengths == [22, 22, 22]  # CLS + 16 patches + 5 prompts
 
 
+def test_vpt_can_return_only_image_patch_tokens():
+    visual = _TinyTimmVisual()
+    adapter = TimmViTVisualPromptEncoder(visual, num_tokens=5, mode="deep")
+    output, patches = adapter(torch.randn(2, 3, 32, 32), return_tokens=True)
+
+    assert output.shape == (2, 16)
+    assert patches.shape == (2, 16, 32)
+
+
 def test_only_visual_prompt_receives_gradients():
     visual = _TinyTimmVisual()
     adapter = TimmViTVisualPromptEncoder(visual, num_tokens=5, mode="deep")
@@ -86,39 +90,7 @@ def test_coop_and_visual_prompt_use_one_adamw_group():
     assert optimizer.param_groups[0]["lr"] == 2e-3
 
 
-def test_checkpoint_restores_the_residual_scale_used_at_its_epoch():
-    assert checkpoint_residual_scale(0, 20) == pytest.approx(0.0)
-    assert checkpoint_residual_scale(1, 20) == pytest.approx(0.05)
-    assert checkpoint_residual_scale(10, 20) == pytest.approx(0.5)
-    assert checkpoint_residual_scale(20, 20) == pytest.approx(1.0)
-    assert checkpoint_residual_scale(80, 20) == pytest.approx(1.0)
-    assert checkpoint_residual_scale(1, 0) == pytest.approx(1.0)
-    with pytest.raises(ValueError, match="negative"):
-        checkpoint_residual_scale(-1, 20)
-
-
-def test_cosine_l2_anchor_penalizes_scale_drift_and_keeps_gradients():
-    reference = torch.tensor([1.0, 2.0, 3.0])
-    unchanged = reference.clone().requires_grad_(True)
-    assert cosine_l2_prompt_anchor_loss(
-        (unchanged,), (reference,), l2_weight=0.5
-    ).item() == pytest.approx(0.0, abs=2e-7)
-
-    scaled = (2.0 * reference).requires_grad_(True)
-    cosine_only = cosine_l2_prompt_anchor_loss(
-        (scaled,), (reference,), l2_weight=0.0
-    )
-    scale_aware = cosine_l2_prompt_anchor_loss(
-        (scaled,), (reference,), l2_weight=0.5
-    )
-    assert cosine_only.item() == pytest.approx(0.0, abs=1e-6)
-    assert scale_aware.item() == pytest.approx(0.5, abs=1e-6)
-    scale_aware.backward()
-    assert scaled.grad is not None
-    assert scaled.grad.norm().item() > 0.0
-
-
-@pytest.mark.skipif(
+@__import__("pytest").mark.skipif(
     os.environ.get("RUN_BIOMEDCLIP_INTEGRATION") != "1",
     reason="Set RUN_BIOMEDCLIP_INTEGRATION=1 to load cached BiomedCLIP weights",
 )

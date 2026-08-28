@@ -1,4 +1,10 @@
 # BiomedCoOp: Learning to Prompt for Biomedical Vision-Language Models
+
+The DermaMNIST CoOp/VPT path includes a from-scratch MT-TCP baseline and an
+optional support-only soft confusion-aware semantic/global/local extension.
+See [scripts/coopvpt/README.md](scripts/coopvpt/README.md) for Bank, training,
+dual-checkpoint testing and ablation commands, and
+[implementation_notes.md](implementation_notes.md) for the exact protocol.
 **[Health-X Lab](http://www.healthx-lab.ca/)** | **[IMPACT Lab](https://users.encs.concordia.ca/~impact/)** 
 
 [Taha Koleilat](https://tahakoleilat.github.io/), [Hojat Asgariandehkordi](https://scholar.google.com/citations?user=ndXNye4AAAAJ&hl=en), [Hassan Rivaz](https://users.encs.concordia.ca/~hrivaz/), [Yiming Xiao](https://yimingxiao.weebly.com/curriculum-vitae.html)

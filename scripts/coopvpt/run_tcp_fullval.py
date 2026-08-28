@@ -1,18 +1,20 @@
-"""Run the final reported TextDeep + MT-TCP LayerBasis + XProto experiment.
+"""Run from-scratch MT-TCP B0 and support-only confusion-aware variants.
 
-The model is trained once per seed. Both best-validation-ACC and
-best-validation-BACC prompt bundles are then loaded and evaluated on test.
+Training and test evaluation are intentionally separate.  A complete
+validation grid and both ACC/BACC checkpoints are required before any test
+image is evaluated.
 """
 
+from __future__ import annotations
+
 import argparse
-import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
-import time
 from argparse import Namespace
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -20,14 +22,16 @@ import numpy as np
 
 REPO = Path(__file__).resolve().parents[2]
 DASSL = REPO / "Dassl.pytorch"
-for path in (REPO, DASSL):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+for location in (REPO, DASSL):
+    if str(location) not in sys.path:
+        sys.path.insert(0, str(location))
 
-METHOD = "CoOp_VPT_Deep_TextDeep_MT-TCP_LayerBasis_XProto_Nv4_Nt4_K50"
-BASELINE_METHOD = "CoOp_VPT_Deep_TextDeep_Nv4_Nt4"
+from models.confusion_aware import CONFUSION_VARIANTS
+
+
 SELECTION_METRICS = ("accuracy", "balanced_accuracy")
-CORE_METRICS = ("accuracy", "balanced_accuracy", "auc", "macro_f1")
+DEFAULT_SHOTS = (4, 8, 16, 32)
+DEFAULT_SEEDS = (1, 2, 3)
 
 
 def _read_json(path):
@@ -40,132 +44,79 @@ def _write_json(path, value):
     path.write_text(json.dumps(value, indent=2), encoding="utf-8")
 
 
-def _sha256_file(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+def method_name(variant):
+    return "FromScratch_MT-TCP_CE_{}".format(variant)
 
 
-def _run_dir(output_root, shots, seed, method=METHOD):
-    return output_root / method / "shots_{}".format(shots) / "seed{}".format(seed)
-
-
-def _baseline_dir(output_root, shots, seed, method=BASELINE_METHOD):
-    return output_root / method / "shots_{}".format(shots) / "seed{}".format(seed)
-
-
-def _baseline_checkpoint(run_dir, selection):
-    """Resolve both current dual-checkpoint and legacy selection-copy layouts."""
-
-    candidates = (
-        run_dir
-        / "prompt_parameters"
-        / "model-best-{}.pth.tar".format(selection),
-        run_dir
-        / "selection_{}".format(selection)
-        / "prompt_parameters"
-        / "model-best.pth.tar",
-    )
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(
-        "Missing baseline {} checkpoint; checked {}".format(
-            selection, ", ".join(str(path) for path in candidates)
-        )
-    )
+def _run_dir(output_root, method, shots, seed):
+    return Path(output_root) / method / "shots_{}".format(shots) / "seed{}".format(seed)
 
 
 def _complete(run_dir, validation_only=False, required_epochs=None):
+    run_dir = Path(run_dir)
     if validation_only:
-        completion_path = run_dir / "validation_search_complete.json"
-        paths = [
-            completion_path,
-            run_dir / "best_validation_accuracy.json",
-            run_dir / "best_validation_balanced_accuracy.json",
-        ]
-        paths.extend(
-            run_dir / "prompt_parameters" / "model-best-{}.pth.tar".format(metric)
-            for metric in SELECTION_METRICS
-        )
+        marker = run_dir / "validation_search_complete.json"
+        required = [marker]
+        for metric in SELECTION_METRICS:
+            required.extend(
+                [
+                    run_dir / "best_validation_{}.json".format(metric),
+                    run_dir
+                    / "prompt_parameters"
+                    / "model-best-{}.pth.tar".format(metric),
+                ]
+            )
     else:
-        completion_path = run_dir / "run_complete.json"
-        paths = [
-            completion_path,
-            run_dir / "results.json",
-            run_dir / "test_by_selection.json",
-            run_dir / "best_validation_accuracy.json",
-            run_dir / "best_validation_balanced_accuracy.json",
-        ]
-        paths.extend(
-            run_dir / "prompt_parameters" / "model-best-{}.pth.tar".format(metric)
-            for metric in SELECTION_METRICS
-        )
-
-    if not all(path.exists() for path in paths):
+        marker = run_dir / "run_complete.json"
+        required = [marker, run_dir / "results.json", run_dir / "test_by_selection.json"]
+    if not all(path.exists() for path in required):
         return False
     if required_epochs is None:
         return True
     try:
-        completion = _read_json(completion_path)
+        return int(_read_json(marker).get("epochs", -1)) == int(required_epochs)
     except (OSError, ValueError, TypeError):
         return False
-    return int(completion.get("epochs", -1)) == int(required_epochs)
-
-
-def _require_validation_gate(args):
-    """Refuse test evaluation until the frozen full-grid validation gate passes."""
-
-    if args.worker:
-        if args.run_dir is None:
-            raise ValueError("Worker gate validation requires --run-dir")
-        output_root = args.run_dir.resolve().parents[2]
-    else:
-        output_root = args.output_root.resolve()
-    gate_path = output_root / "{}_validation_summary.json".format(
-        args.summary_prefix
-    )
-    if not gate_path.exists():
-        raise RuntimeError(
-            "Test evaluation requires a validation-gate summary: {}".format(
-                gate_path
-            )
-        )
-    summary = _read_json(gate_path)
-    protocol = summary.get("protocol", {})
-    verdict = summary.get("overall", {}).get("effectiveness", {})
-    if protocol.get("method") != args.method:
-        raise RuntimeError(
-            "Validation-gate method mismatch: expected {!r}, got {!r}".format(
-                args.method, protocol.get("method")
-            )
-        )
-    if protocol.get("test_evaluated") is not False:
-        raise RuntimeError("Validation gate must be produced without test evaluation")
-    if not args.worker:
-        expected_grid = (list(args.shots), list(args.seeds))
-        actual_grid = (protocol.get("shots"), protocol.get("seeds"))
-        if actual_grid != expected_grid:
-            raise RuntimeError(
-                "Validation-gate grid mismatch: expected {}, got {}".format(
-                    expected_grid, actual_grid
-                )
-            )
-    if verdict.get("effective") is not True:
-        raise RuntimeError(
-            "Frozen global validation gate did not pass; test remains untouched: {}".format(
-                gate_path
-            )
-        )
-    return gate_path
 
 
 def _train_args(args):
     resume = ""
     if (args.run_dir / "prompt_parameters" / "checkpoint").exists():
         resume = str(args.run_dir)
+    options = [
+        "DATASET.NUM_SHOTS",
+        str(args.shots),
+        "DATALOADER.TRAIN_X.BATCH_SIZE",
+        str(args.batch_size),
+        "DATALOADER.NUM_WORKERS",
+        str(args.num_workers),
+        "DATALOADER.PERSISTENT_WORKERS",
+        "True" if args.num_workers else "False",
+        "OPTIM.MAX_EPOCH",
+        str(args.epochs),
+        "TRAINER.COOPVPT.OPTIM.MAX_EPOCH",
+        str(args.epochs),
+        "OPTIM.LR",
+        "0.005",
+        "TRAINER.COOPVPT.OPTIM.LR",
+        "0.005",
+        "TRAIN.CHECKPOINT_FREQ",
+        str(args.checkpoint_freq),
+        "TRAINER.TCP.DESCRIPTION_CACHE",
+        str(args.description_cache),
+        "TRAINER.TCP.LAYER_DESCRIPTION_CACHE",
+        str(args.layer_description_cache),
+        "TRAINER.CONFUSION_AWARE.VARIANT",
+        str(args.variant),
+        "TRAINER.CONFUSION_AWARE.BANK_ROOT",
+        str(args.bank_root or ""),
+        "TRAINER.CONFUSION_AWARE.PRIOR_ALPHA",
+        str(args.prior_alpha),
+        "TRAINER.CONFUSION_AWARE.GAMMA",
+        str(args.gamma),
+        "TRAINER.CONFUSION_AWARE.LAMBDA_CONF",
+        str(args.lambda_conf),
+    ]
     return Namespace(
         root=str(args.data_root),
         output_dir=str(args.run_dir),
@@ -187,48 +138,73 @@ def _train_args(args):
         model_dir="",
         load_epoch=None,
         no_train=False,
-        opts=[
-            "DATASET.NUM_SHOTS", str(args.shots),
-            "DATALOADER.TRAIN_X.BATCH_SIZE", str(args.batch_size),
-            "DATALOADER.NUM_WORKERS", str(args.num_workers),
-            "DATALOADER.PERSISTENT_WORKERS", "True" if args.num_workers else "False",
-            "OPTIM.MAX_EPOCH", str(args.epochs),
-            "TRAINER.COOPVPT.OPTIM.MAX_EPOCH", str(args.epochs),
-            "OPTIM.LR", "0.005",
-            "TRAINER.COOPVPT.OPTIM.LR", "0.005",
-            "TRAIN.CHECKPOINT_FREQ", str(args.checkpoint_freq),
-            "TRAINER.TCP.DESCRIPTION_CACHE", str(args.description_cache),
-            "TRAINER.TCP.LAYER_DESCRIPTION_CACHE",
-            str(args.layer_description_cache),
-            "TRAINER.TCP.INIT_BASELINE_CHECKPOINT",
-            str(args.init_baseline_checkpoint or ""),
-        ],
+        opts=options,
     )
 
 
-def _evaluate_existing_selections(trainer, args, run_dir, training_reused):
-    """Evaluate the two saved validation selections without any training."""
+def _validation_grid_path(args):
+    return Path(args.output_root) / args.method / "validation_grid_complete.json"
 
+
+def _require_validation_grid(args):
+    path = _validation_grid_path(args)
+    if not path.exists():
+        raise RuntimeError(
+            "Test evaluation requires a frozen complete validation grid: {}".format(path)
+        )
+    marker = _read_json(path)
+    expected = {
+        "method": args.method,
+        "variant": args.variant,
+        "shots": list(args.shots),
+        "seeds": list(args.seeds),
+        "epochs": int(args.epochs),
+        "test_evaluated": False,
+    }
+    mismatches = {
+        key: (marker.get(key), value)
+        for key, value in expected.items()
+        if marker.get(key) != value
+    }
+    if mismatches:
+        raise RuntimeError("Validation-grid marker mismatch: {}".format(mismatches))
+    return path
+
+
+def _copy_confusion_matrices(run_dir, selection):
+    for source_name in ("cmat.pt", "cmat_raw.pt"):
+        source = Path(run_dir) / source_name
+        if source.exists():
+            destination = Path(run_dir) / "test_{}_selected_by_{}.pt".format(
+                source_name.removesuffix(".pt"), selection
+            )
+            shutil.copyfile(source, destination)
+
+
+def _evaluate_existing_selections(trainer, args, run_dir, training_reused=True):
     selections = {}
     test_by_selection = {}
     for metric in SELECTION_METRICS:
-        validation_path = run_dir / "best_validation_{}.json".format(metric)
+        validation_path = Path(run_dir) / "best_validation_{}.json".format(metric)
         checkpoint_path = (
-            run_dir
+            Path(run_dir)
             / "prompt_parameters"
             / "model-best-{}.pth.tar".format(metric)
         )
         if not validation_path.exists() or not checkpoint_path.exists():
             raise FileNotFoundError(
-                "Existing evaluation requires validation record and checkpoint: "
-                "{} / {}".format(validation_path, checkpoint_path)
+                "Both validation record and checkpoint are required: {} / {}".format(
+                    validation_path, checkpoint_path
+                )
             )
         validation = _read_json(validation_path)
         checkpoint = trainer.load_prompt_checkpoint(checkpoint_path)
+        trainer._analysis_tag = "test_selected_by_{}".format(metric)
         trainer.test(split="test")
         test_metrics = {
             key: float(value) for key, value in trainer.last_eval_results.items()
         }
+        _copy_confusion_matrices(run_dir, metric)
         test_by_selection[metric] = test_metrics
         selections[metric] = {
             "best_epoch": int(validation["epoch"]),
@@ -239,37 +215,30 @@ def _evaluate_existing_selections(trainer, args, run_dir, training_reused):
             },
             "test": test_metrics,
         }
-
-        selection_dir = run_dir / "selection_{}".format(metric) / "prompt_parameters"
+        selection_dir = Path(run_dir) / "selection_{}".format(metric) / "prompt_parameters"
         selection_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(checkpoint_path, selection_dir / "model-best.pth.tar")
         (selection_dir / "checkpoint").write_text(
             "model-best.pth.tar\n", encoding="utf-8"
         )
-        cmat = run_dir / "cmat.pt"
-        if cmat.exists():
-            shutil.copyfile(
-                cmat, run_dir / "test_cmat_selected_by_{}.pt".format(metric)
-            )
 
-    _write_json(run_dir / "test_by_selection.json", test_by_selection)
+    _write_json(Path(run_dir) / "test_by_selection.json", test_by_selection)
     _write_json(
-        run_dir / "results.json",
+        Path(run_dir) / "results.json",
         {
             "method": args.method,
-            "shots": args.shots,
-            "seed": args.seed,
+            "variant": args.variant,
+            "shots": int(args.shots),
+            "seed": int(args.seed),
             "training_reused": bool(training_reused),
             "selections": selections,
         },
     )
     _write_json(
-        run_dir / "run_complete.json",
+        Path(run_dir) / "run_complete.json",
         {
             "status": "complete",
-            "exit_code": 0,
-            "epochs": args.epochs,
-            "training_reused": bool(training_reused),
+            "epochs": int(args.epochs),
             "evaluated_existing_checkpoints_only": bool(training_reused),
         },
     )
@@ -278,7 +247,6 @@ def _evaluate_existing_selections(trainer, args, run_dir, training_reused):
 def run_worker(args):
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-
     import torch
     import train
     from dassl.engine import build_trainer
@@ -286,10 +254,8 @@ def run_worker(args):
 
     run_dir = args.run_dir.resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
-    if _complete(
-        run_dir, args.validation_only, required_epochs=args.epochs
-    ) and not args.force:
-        print("SKIP shots={} seed={} (complete)".format(args.shots, args.seed), flush=True)
+    if _complete(run_dir, args.validation_only, args.epochs) and not args.force:
+        print("SKIP shots={} seed={} (complete)".format(args.shots, args.seed))
         return
 
     cfg = train.setup_cfg(_train_args(args))
@@ -297,61 +263,21 @@ def run_worker(args):
     setup_logger(cfg.OUTPUT_DIR)
     if torch.cuda.is_available() and cfg.USE_CUDA:
         torch.backends.cudnn.benchmark = True
-
-    print(
-        "RUN {} shots={} seed={} epochs={}".format(
-            args.method, args.shots, args.seed, args.epochs
-        ),
-        flush=True,
-    )
     trainer = build_trainer(cfg)
-    model = trainer._unwrapped_model()
+
     if args.evaluate_existing:
-        if args.validation_only:
-            raise ValueError("--evaluate-existing and --validation-only are exclusive")
-        if not _complete(
-            run_dir, validation_only=True, required_epochs=args.epochs
-        ):
-            raise RuntimeError(
-                "Cannot evaluate existing checkpoints before validation training is complete: "
-                "{}".format(run_dir)
-            )
-        existing_manifest = _read_json(run_dir / "run_manifest.json")
-        expected = {
-            "method": args.method,
-            "shots": args.shots,
-            "seed": args.seed,
-            "epochs": args.epochs,
-        }
-        mismatches = {
-            key: (existing_manifest.get(key), value)
-            for key, value in expected.items()
-            if existing_manifest.get(key) != value
-        }
-        if mismatches:
-            raise RuntimeError(
-                "Evaluation arguments do not match the trained run manifest: {}".format(
-                    mismatches
-                )
-            )
         trainer._writer = None
-        _evaluate_existing_selections(
-            trainer, args, run_dir, training_reused=True
-        )
-        print(
-            "DONE existing-checkpoint evaluation shots={} seed={}".format(
-                args.shots, args.seed
-            ),
-            flush=True,
-        )
+        _evaluate_existing_selections(trainer, args, run_dir, training_reused=True)
         return
 
     manifest = {
+        "protocol": "from_scratch_joint_ce",
         "method": args.method,
+        "variant": args.variant,
         "dataset": "DermaMNIST",
-        "shots": args.shots,
-        "seed": args.seed,
-        "epochs": args.epochs,
+        "shots": int(args.shots),
+        "seed": int(args.seed),
+        "epochs": int(args.epochs),
         "split_sizes": {
             "train": len(trainer.dm.dataset.train_x),
             "validation": len(trainer.dm.dataset.val),
@@ -359,620 +285,193 @@ def run_worker(args):
         },
         "validation_split": "complete official split with natural class distribution",
         "optimizer": "AdamW",
-        "shared_lr": 0.005,
+        "lr": 0.005,
         "weight_decay": 0.0005,
-        "coop_tokens": 4,
-        "visual_vpt": {"mode": "deep", "tokens": 4},
-        "ctx_init": "a photo of a",
+        "scheduler": "cosine",
+        "loss": "CE" if args.variant == "b0" else "CE + lambda_conf * softplus_margin",
+        "lambda_conf": float(args.lambda_conf),
+        "gamma": float(args.gamma),
+        "prior_alpha": float(args.prior_alpha),
+        "warm_start": False,
         "selection_metrics": list(SELECTION_METRICS),
-        "loss": (
-            "CE + 4.0 * KG[centered_cosine] + 4.0 * "
-            "prompt_anchor(cosine + 0.5 * relative_L2) + "
-            "0.5 * cross_modal_proto(T=0.1)"
-        ),
-        "tcp_knowledge_loss_mode": "centered_cosine",
-        "tcp_prior_representation": "layer_cls",
-        "single_model_only": True,
-        "shot_specific_hyperparameters": False,
-        "baseline_prompt_initialization": (
-            {
-                "checkpoint": str(args.init_baseline_checkpoint),
-                "selection": args.init_baseline_selection,
-                "sha256": _sha256_file(args.init_baseline_checkpoint),
-                "copied_parameters": [
-                    "prompt_learner.ctx",
-                    "visual_prompt.prompt_embeddings",
-                    "text_prompt.prompt_embeddings -> tcp.text_prompt.prompt_embeddings",
-                ],
-                "optimizer_state_loaded": False,
-            }
-            if args.init_baseline_checkpoint
-            else None
-        ),
-        "tcp_residual_warmup_epochs": 10,
-        "tcp_prompt_anchor_weight": 4.0,
-        "tcp_prompt_anchor_l2_weight": 0.5,
-        "tcp_eval_warmstart_epoch0": True,
-        "cross_modal_prototype": {
-            "weight": 0.5,
-            "temperature": 0.1,
-            "class_balanced_batch_centroids": True,
-            "training_only": True,
-            "inference_logit_fusion": False,
-        },
-        "tcp": model.text_encoder.metadata(),
     }
     _write_json(run_dir / "run_manifest.json", manifest)
-
     trainer.train()
-    trainer._writer = None
-
-    if args.validation_only:
-        _write_json(
-            run_dir / "validation_search_complete.json",
-            {
-                "status": "complete",
-                "epochs": args.epochs,
-                "test_evaluated": False,
-            },
-        )
-        print(
-            "DONE validation-only shots={} seed={}".format(args.shots, args.seed),
-            flush=True,
-        )
-        return
-
-    _evaluate_existing_selections(
-        trainer, args, run_dir, training_reused=False
+    if not _complete(run_dir, validation_only=True, required_epochs=None):
+        # Marker does not exist yet; verify the actual dual artifacts first.
+        for metric in SELECTION_METRICS:
+            required = [
+                run_dir / "best_validation_{}.json".format(metric),
+                run_dir / "prompt_parameters" / "model-best-{}.pth.tar".format(metric),
+            ]
+            if not all(path.exists() for path in required):
+                raise RuntimeError("Training did not produce dual best checkpoints")
+    _write_json(
+        run_dir / "validation_search_complete.json",
+        {
+            "status": "complete",
+            "epochs": int(args.epochs),
+            "test_evaluated": False,
+            "variant": args.variant,
+        },
     )
-    print("DONE shots={} seed={}".format(args.shots, args.seed), flush=True)
+    if not args.validation_only:
+        _evaluate_existing_selections(trainer, args, run_dir, training_reused=False)
+
+
+def _worker_command(args, shots, seed):
+    run_dir = _run_dir(args.output_root, args.method, shots, seed)
+    command = [
+        str(args.python),
+        "-B",
+        str(Path(__file__).resolve()),
+        "--worker",
+        "--data-root",
+        str(args.data_root),
+        "--output-root",
+        str(args.output_root),
+        "--run-dir",
+        str(run_dir),
+        "--method",
+        args.method,
+        "--variant",
+        args.variant,
+        "--shots",
+        str(shots),
+        "--seed",
+        str(seed),
+        "--epochs",
+        str(args.epochs),
+        "--batch-size",
+        str(args.batch_size),
+        "--num-workers",
+        str(args.num_workers),
+        "--checkpoint-freq",
+        str(args.checkpoint_freq),
+        "--description-cache",
+        str(args.description_cache),
+        "--layer-description-cache",
+        str(args.layer_description_cache),
+        "--prior-alpha",
+        str(args.prior_alpha),
+        "--gamma",
+        str(args.gamma),
+        "--lambda-conf",
+        str(args.lambda_conf),
+    ]
+    if args.bank_root:
+        command.extend(["--bank-root", str(args.bank_root)])
+    if args.validation_only:
+        command.append("--validation-only")
+    if args.evaluate_existing:
+        command.append("--evaluate-existing")
+    if args.force:
+        command.append("--force")
+    return command, run_dir
 
 
 def launch(args):
-    pending = [
-        (shots, seed, _run_dir(args.output_root, shots, seed, args.method))
-        for shots in args.shots
-        for seed in args.seeds
-        if args.force
-        or not _complete(
-            _run_dir(args.output_root, shots, seed, args.method),
-            args.validation_only,
-            required_epochs=args.epochs,
-        )
-    ]
-    active = []
-    failures = []
-    while pending or active:
-        while pending and len(active) < args.max_parallel:
-            shots, seed, run_dir = pending.pop(0)
-            run_dir.mkdir(parents=True, exist_ok=True)
-            log_file = (run_dir / "console.log").open("w", encoding="utf-8")
-            command = [
-                args.python,
-                "-u",
-                str(Path(__file__).resolve()),
-                "--worker",
-                "--data-root", str(args.data_root),
-                "--run-dir", str(run_dir),
-                "--shots", str(shots),
-                "--seed", str(seed),
-                "--epochs", str(args.epochs),
-                "--batch-size", str(args.batch_size),
-                "--num-workers", str(args.num_workers),
-                "--checkpoint-freq", str(args.checkpoint_freq),
-                "--method", args.method,
-                "--baseline-method", args.baseline_method,
-                "--init-baseline-selection", args.init_baseline_selection,
-                "--description-cache", str(args.description_cache),
-                "--layer-description-cache", str(args.layer_description_cache),
-                "--summary-prefix", args.summary_prefix,
-            ]
-            if args.init_baseline_root:
-                baseline_checkpoint = _baseline_checkpoint(
-                    _baseline_dir(
-                        args.init_baseline_root,
-                        shots,
-                        seed,
-                        args.baseline_method,
-                    ),
-                    args.init_baseline_selection,
-                )
-                command.extend(
-                    ["--init-baseline-checkpoint", str(baseline_checkpoint)]
-                )
-            if args.validation_only:
-                command.append("--validation-only")
-            if args.evaluate_existing:
-                command.append("--evaluate-existing")
-            if args.force:
-                command.append("--force")
-            environment = os.environ.copy()
-            environment["PYTHONPATH"] = str(DASSL)
-            environment["HF_HUB_OFFLINE"] = "1"
-            environment["TRANSFORMERS_OFFLINE"] = "1"
-            process = subprocess.Popen(
-                command,
-                cwd=REPO,
-                env=environment,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            active.append((process, shots, seed, run_dir, log_file))
-            print(
-                "START shots={} seed={} pid={}".format(shots, seed, process.pid),
-                flush=True,
-            )
-
-        time.sleep(2)
-        remaining = []
-        for process, shots, seed, run_dir, log_file in active:
-            code = process.poll()
-            if code is None:
-                remaining.append((process, shots, seed, run_dir, log_file))
+    pending = []
+    for shots in args.shots:
+        for seed in args.seeds:
+            command, run_dir = _worker_command(args, shots, seed)
+            if _complete(run_dir, args.validation_only, args.epochs) and not args.force:
+                print("SKIP {}".format(run_dir), flush=True)
                 continue
-            log_file.close()
-            if code == 0 and _complete(
-                run_dir,
-                args.validation_only,
-                required_epochs=args.epochs,
-            ):
-                print("COMPLETE shots={} seed={}".format(shots, seed), flush=True)
-            else:
-                tail = (run_dir / "console.log").read_text(
-                    encoding="utf-8", errors="replace"
-                )[-6000:]
-                failures.append((shots, seed, code, tail))
-                print(
-                    "FAILED shots={} seed={} exit={}".format(shots, seed, code),
-                    flush=True,
-                )
-        active = remaining
+            pending.append((command, run_dir))
 
-    if failures:
-        raise RuntimeError(
-            "One or more TCP runs failed:\n{}".format(
-                "\n\n".join(
-                    "shots={} seed={} exit={}\n{}".format(*failure)
-                    for failure in failures
-                )
-            )
-        )
+    def run_one(item):
+        command, run_dir = item
+        print("RUN {}".format(" ".join(command)), flush=True)
+        subprocess.run(command, cwd=str(REPO), check=True)
+        return run_dir
+
+    if int(args.max_parallel) <= 1:
+        for item in pending:
+            run_one(item)
+        return
+    with ThreadPoolExecutor(max_workers=int(args.max_parallel)) as executor:
+        futures = {executor.submit(run_one, item): item[1] for item in pending}
+        for future in as_completed(futures):
+            run_dir = futures[future]
+            future.result()
+            print("DONE {}".format(run_dir), flush=True)
 
 
-def _all_report_metrics(run):
-    return tuple(
+def _numeric_metrics(records):
+    common = set(records[0])
+    for record in records[1:]:
+        common &= set(record)
+    return sorted(
         key
-        for key in run["balanced_accuracy"]
-        if key in CORE_METRICS or key.startswith("recall_class_")
+        for key in common
+        if all(isinstance(record[key], (int, float)) for record in records)
     )
 
 
-def _aggregate_runs(tcp_runs, baseline_runs, seeds, split_name="test"):
-    result = {"selections": {}}
-    for selection in SELECTION_METRICS:
-        report_metrics = _all_report_metrics(tcp_runs[0])
-        selection_result = {"per_seed": [], "metrics": {}}
-        for index, seed in enumerate(seeds):
-            tcp = tcp_runs[index][selection]
-            baseline = baseline_runs[index][selection]
-            selection_result["per_seed"].append(
-                {
-                    "seed": seed,
-                    "tcp": {key: float(tcp[key]) for key in report_metrics},
-                    "baseline": {key: float(baseline[key]) for key in report_metrics},
-                    "delta": {
-                        key: float(tcp[key]) - float(baseline[key])
-                        for key in report_metrics
-                    },
-                }
-            )
-        for metric in report_metrics:
-            tcp_values = np.asarray(
-                [float(run[selection][metric]) for run in tcp_runs]
-            )
-            base_values = np.asarray(
-                [float(run[selection][metric]) for run in baseline_runs]
-            )
-            deltas = tcp_values - base_values
-            selection_result["metrics"][metric] = {
-                "tcp_mean": float(tcp_values.mean()),
-                "tcp_std": float(tcp_values.std(ddof=0)),
-                "baseline_mean": float(base_values.mean()),
-                "baseline_std": float(base_values.std(ddof=0)),
-                "delta_mean": float(deltas.mean()),
-                "delta_std": float(deltas.std(ddof=0)),
-                "delta_by_seed": deltas.tolist(),
-            }
-        result["selections"][selection] = selection_result
-
-    result["effectiveness_by_selection"] = {}
-    for selection in SELECTION_METRICS:
-        selected = result["selections"][selection]["metrics"]
-        seed_wins = sum(
-            delta > 0
-            for delta in selected["balanced_accuracy"]["delta_by_seed"]
-        )
-        required_wins = int(np.ceil(2.0 * len(seeds) / 3.0))
-        bacc_delta = selected["balanced_accuracy"]["delta_mean"]
-        acc_delta = selected["accuracy"]["delta_mean"]
-        auc_delta = selected["auc"]["delta_mean"]
-        criteria = {
-            "mean_{}_bacc_gain_at_least_1pp".format(split_name): bacc_delta >= 1.0,
-            "bacc_wins_at_least_two_thirds": seed_wins >= required_wins,
-            "mean_{}_acc_drop_no_more_than_2pp".format(split_name): acc_delta >= -2.0,
-            "mean_{}_auc_drop_no_more_than_1pp".format(split_name): auc_delta >= -1.0,
-        }
-        result["effectiveness_by_selection"][selection] = {
-            "effective": all(criteria.values()),
-            "criteria": criteria,
-            "bacc_seed_wins": int(seed_wins),
-            "evaluated_runs": len(seeds),
-            "required_seed_wins": required_wins,
-            "primary_deltas_pp": {
-                "accuracy": acc_delta,
-                "balanced_accuracy": bacc_delta,
-                "auc": auc_delta,
-            },
-        }
-
-    # Backward-compatible alias used by the frozen pre-test validation gate.
-    # The gate remains tied to best-validation-BACC so adding the reporting
-    # audit above cannot retroactively change whether test evaluation was allowed.
-    result["effectiveness"] = result["effectiveness_by_selection"][
-        "balanced_accuracy"
-    ]
-    return result
-
-
-def _read_validation_selections(run_dir):
-    return {
-        selection: _read_json(
-            run_dir / "best_validation_{}.json".format(selection)
-        )["metrics"]
-        for selection in SELECTION_METRICS
-    }
-
-
-def aggregate_validation(args):
-    """Compare both validation-selected checkpoints without touching test."""
-
-    baseline_root = (
-        args.comparison_baseline_root
-        or args.init_baseline_root
-        or args.output_root
-    ).resolve()
+def aggregate(args, validation_only=False):
+    split = "validation" if validation_only else "test"
     summary = {
         "protocol": {
             "method": args.method,
-            "baseline": args.baseline_method,
+            "variant": args.variant,
             "shots": list(args.shots),
             "seeds": list(args.seeds),
-            "reported_split": "complete natural-distribution validation",
-            "test_evaluated": False,
+            "epochs": int(args.epochs),
             "selection_metrics": list(SELECTION_METRICS),
-            "reported_scale": "percent",
+            "split": split,
         },
         "shots": {},
     }
-    all_tcp_runs = []
-    all_baseline_runs = []
-    all_run_ids = []
     for shots in args.shots:
-        tcp_runs = []
-        baseline_runs = []
-        for seed in args.seeds:
-            tcp_runs.append(
-                _read_validation_selections(
-                    _run_dir(args.output_root, shots, seed, args.method)
-                )
-            )
-            baseline_runs.append(
-                _read_validation_selections(
-                    _baseline_dir(
-                        baseline_root, shots, seed, args.baseline_method
+        shot_result = {}
+        for selection in SELECTION_METRICS:
+            rows = []
+            per_seed = []
+            for seed in args.seeds:
+                run_dir = _run_dir(args.output_root, args.method, shots, seed)
+                if validation_only:
+                    record = _read_json(
+                        run_dir / "best_validation_{}.json".format(selection)
                     )
-                )
-            )
-        summary["shots"][str(shots)] = _aggregate_runs(
-            tcp_runs, baseline_runs, args.seeds, split_name="validation"
+                    metrics = record["metrics"]
+                    epoch = record["epoch"]
+                else:
+                    result = _read_json(run_dir / "results.json")
+                    item = result["selections"][selection]
+                    metrics = item["test"]
+                    epoch = item["best_epoch"]
+                metrics = {key: float(value) for key, value in metrics.items()}
+                rows.append(metrics)
+                per_seed.append({"seed": int(seed), "best_epoch": int(epoch), **metrics})
+            metric_summary = {}
+            for metric in _numeric_metrics(rows):
+                values = np.asarray([row[metric] for row in rows], dtype=np.float64)
+                metric_summary[metric] = {
+                    "mean": float(np.nanmean(values)),
+                    "std": float(np.nanstd(values, ddof=0)),
+                    "values": [float(value) for value in values],
+                }
+            shot_result[selection] = {
+                "per_seed": per_seed,
+                "metrics": metric_summary,
+            }
+        summary["shots"][str(shots)] = shot_result
+    method_dir = Path(args.output_root) / args.method
+    _write_json(method_dir / "{}_summary.json".format(split), summary)
+    if validation_only:
+        _write_json(
+            method_dir / "validation_grid_complete.json",
+            {
+                "method": args.method,
+                "variant": args.variant,
+                "shots": list(args.shots),
+                "seeds": list(args.seeds),
+                "epochs": int(args.epochs),
+                "test_evaluated": False,
+            },
         )
-        all_tcp_runs.extend(tcp_runs)
-        all_baseline_runs.extend(baseline_runs)
-        all_run_ids.extend(
-            "shots{}_seed{}".format(shots, seed) for seed in args.seeds
-        )
-    summary["overall"] = _aggregate_runs(
-        all_tcp_runs,
-        all_baseline_runs,
-        all_run_ids,
-        split_name="validation",
-    )
-
-    json_path = args.output_root / "{}_validation_summary.json".format(
-        args.summary_prefix
-    )
-    md_path = args.output_root / "{}_validation_summary.md".format(
-        args.summary_prefix
-    )
-    _write_json(json_path, summary)
-    lines = [
-        "# {} — validation-only paired result".format(args.method),
-        "",
-        "No test split was evaluated. Values are means across paired seeds (%).",
-        "",
-    ]
-    for selection in SELECTION_METRICS:
-        label = "ACC" if selection == "accuracy" else "BACC"
-        lines.extend(
-            [
-                "## Selected by best validation {}".format(label),
-                "",
-                "| Shots | ΔACC | ΔBACC | ΔAUC | BACC wins |",
-                "|---:|---:|---:|---:|---:|",
-            ]
-        )
-        for shots in args.shots:
-            item = summary["shots"][str(shots)]["selections"][selection]
-            metrics = item["metrics"]
-            wins = sum(
-                value > 0
-                for value in metrics["balanced_accuracy"]["delta_by_seed"]
-            )
-            lines.append(
-                "| {} | {:+.2f} | {:+.2f} | {:+.2f} | {}/{} |".format(
-                    shots,
-                    metrics["accuracy"]["delta_mean"],
-                    metrics["balanced_accuracy"]["delta_mean"],
-                    metrics["auc"]["delta_mean"],
-                    wins,
-                    len(args.seeds),
-                )
-            )
-        overall = summary["overall"]["selections"][selection]
-        metrics = overall["metrics"]
-        wins = sum(
-            value > 0
-            for value in metrics["balanced_accuracy"]["delta_by_seed"]
-        )
-        lines.append(
-            "| Overall | {:+.2f} | {:+.2f} | {:+.2f} | {}/{} |".format(
-                metrics["accuracy"]["delta_mean"],
-                metrics["balanced_accuracy"]["delta_mean"],
-                metrics["auc"]["delta_mean"],
-                wins,
-                len(all_run_ids),
-            )
-        )
-        lines.append("")
-    verdict = summary["overall"]["effectiveness"]
-    delta = verdict["primary_deltas_pp"]
-    lines.extend(
-        [
-            "## Frozen global validation gate",
-            "",
-            "Primary selection: best validation BACC checkpoint.",
-            "",
-            "| Verdict | BACC wins | Required | ΔACC | ΔBACC | ΔAUC |",
-            "|---|---:|---:|---:|---:|---:|",
-            "| {} | {}/{} | {} | {:+.2f} | {:+.2f} | {:+.2f} |".format(
-                "PASS" if verdict["effective"] else "FAIL",
-                verdict["bacc_seed_wins"],
-                verdict["evaluated_runs"],
-                verdict["required_seed_wins"],
-                delta["accuracy"],
-                delta["balanced_accuracy"],
-                delta["auc"],
-            ),
-            "",
-            (
-                "Gate passed: the existing dual checkpoints may now be evaluated on test."
-                if verdict["effective"]
-                else "Test remains untouched because this gate failed."
-            ),
-            "",
-        ]
-    )
-    md_path.write_text("\n".join(lines), encoding="utf-8")
-    print("WROTE {}".format(json_path), flush=True)
-    print("WROTE {}".format(md_path), flush=True)
-
-
-def aggregate(args):
-    baseline_root = (
-        args.comparison_baseline_root
-        or args.init_baseline_root
-        or args.output_root
-    ).resolve()
-    summary = {
-        "protocol": {
-            "method": args.method,
-            "baseline": args.baseline_method,
-            "shots": list(args.shots),
-            "seeds": list(args.seeds),
-            "compared_checkpoints": [
-                "best validation accuracy",
-                "best validation balanced_accuracy",
-            ],
-            "effectiveness_evaluated_separately_by_selection": True,
-            "reported_scale": "percent",
-            "std": "population standard deviation across seeds",
-        },
-        "shots": {},
-    }
-    all_tcp_runs = []
-    all_baseline_runs = []
-    all_run_ids = []
-    for shots in args.shots:
-        tcp_runs = []
-        baseline_runs = []
-        for seed in args.seeds:
-            tcp_path = (
-                _run_dir(args.output_root, shots, seed, args.method)
-                / "test_by_selection.json"
-            )
-            baseline_path = (
-                _baseline_dir(
-                    baseline_root, shots, seed, args.baseline_method
-                )
-                / "test_by_selection.json"
-            )
-            if not tcp_path.exists():
-                raise FileNotFoundError("Missing TCP result: {}".format(tcp_path))
-            if not baseline_path.exists():
-                raise FileNotFoundError(
-                    "Missing baseline result: {}".format(baseline_path)
-                )
-            tcp_runs.append(_read_json(tcp_path))
-            baseline_runs.append(_read_json(baseline_path))
-        summary["shots"][str(shots)] = _aggregate_runs(
-            tcp_runs, baseline_runs, args.seeds
-        )
-        all_tcp_runs.extend(tcp_runs)
-        all_baseline_runs.extend(baseline_runs)
-        all_run_ids.extend(
-            "shots{}_seed{}".format(shots, seed) for seed in args.seeds
-        )
-    summary["overall"] = _aggregate_runs(
-        all_tcp_runs, all_baseline_runs, all_run_ids
-    )
-
-    json_path = args.output_root / "{}_summary.json".format(args.summary_prefix)
-    md_path = args.output_root / "{}_summary.md".format(args.summary_prefix)
-    _write_json(json_path, summary)
-    lines = [
-        "# {} — paired result".format(args.method),
-        "",
-        (
-            "Values are test mean ± population std (%); delta is TCP minus "
-            "the same-shot, same-seed `{}` baseline."
-        ).format(args.baseline_method),
-        "",
-    ]
-    for selection in SELECTION_METRICS:
-        label = "ACC" if selection == "accuracy" else "BACC"
-        lines.extend(
-            [
-                "## Selected by best validation {}".format(label),
-                "",
-                "| Shots | Metric | Baseline | TCP | Mean delta | Seed deltas |",
-                "|---:|---|---:|---:|---:|---|",
-            ]
-        )
-        for shots in args.shots:
-            metrics = summary["shots"][str(shots)]["selections"][selection]["metrics"]
-            for metric in CORE_METRICS:
-                item = metrics[metric]
-                lines.append(
-                    "| {} | {} | {:.2f} ± {:.2f} | {:.2f} ± {:.2f} | {:+.2f} | {} |".format(
-                        shots,
-                        metric,
-                        item["baseline_mean"], item["baseline_std"],
-                        item["tcp_mean"], item["tcp_std"], item["delta_mean"],
-                        ", ".join(
-                            "{:+.2f}".format(value)
-                            for value in item["delta_by_seed"]
-                        ),
-                    )
-                )
-        lines.append("")
-        metrics = summary["overall"]["selections"][selection]["metrics"]
-        lines.extend(
-            [
-                "### Overall across all paired shot/seed runs",
-                "",
-                "| Metric | Baseline | TCP | Mean delta | Run deltas |",
-                "|---|---:|---:|---:|---|",
-            ]
-        )
-        for metric in CORE_METRICS:
-            item = metrics[metric]
-            lines.append(
-                "| {} | {:.2f} ± {:.2f} | {:.2f} ± {:.2f} | {:+.2f} | {} |".format(
-                    metric,
-                    item["baseline_mean"], item["baseline_std"],
-                    item["tcp_mean"], item["tcp_std"], item["delta_mean"],
-                    ", ".join(
-                        "{:+.2f}".format(value)
-                        for value in item["delta_by_seed"]
-                    ),
-                )
-            )
-        lines.append("")
-
-    lines.extend(
-        [
-            "## Fixed effectiveness rule by checkpoint selection",
-            "",
-            "Each checkpoint is judged independently; results from the two models are never fused.",
-            "",
-            "| Selection | Shots | Verdict | BACC wins | ΔACC | ΔBACC | ΔAUC |",
-            "|---|---:|---|---:|---:|---:|---:|",
-        ]
-    )
-    for selection in SELECTION_METRICS:
-        label = "ACC" if selection == "accuracy" else "BACC"
-        for shots in args.shots:
-            verdict = summary["shots"][str(shots)][
-                "effectiveness_by_selection"
-            ][selection]
-            delta = verdict["primary_deltas_pp"]
-            lines.append(
-                "| {} | {} | {} | {}/{} | {:+.2f} | {:+.2f} | {:+.2f} |".format(
-                    label,
-                    shots,
-                    "Effective" if verdict["effective"] else "Not effective",
-                    verdict["bacc_seed_wins"],
-                    verdict["evaluated_runs"],
-                    delta["accuracy"],
-                    delta["balanced_accuracy"],
-                    delta["auc"],
-                )
-            )
-        verdict = summary["overall"]["effectiveness_by_selection"][selection]
-        delta = verdict["primary_deltas_pp"]
-        lines.append(
-            "| {} | Overall | {} | {}/{} | {:+.2f} | {:+.2f} | {:+.2f} |".format(
-                label,
-                "Effective" if verdict["effective"] else "Not effective",
-                verdict["bacc_seed_wins"],
-                verdict["evaluated_runs"],
-                delta["accuracy"],
-                delta["balanced_accuracy"],
-                delta["auc"],
-            )
-        )
-    accuracy_effective = summary["overall"]["effectiveness_by_selection"][
-        "accuracy"
-    ]["effective"]
-    bacc_effective = summary["overall"]["effectiveness_by_selection"][
-        "balanced_accuracy"
-    ]["effective"]
-    lines.extend(
-        [
-            "",
-            "## Selection conclusion",
-            "",
-            (
-                "The best-validation-ACC checkpoint satisfies the fixed test rule; "
-                "it is the supported inference checkpoint for this experiment."
-                if accuracy_effective
-                else "The best-validation-ACC checkpoint does not satisfy the fixed test rule."
-            ),
-            "",
-            (
-                "The separately retained best-validation-BACC checkpoint also satisfies the rule."
-                if bacc_effective
-                else (
-                    "The separately retained best-validation-BACC checkpoint does not satisfy "
-                    "the rule and must not be presented as an improvement."
-                )
-            ),
-        ]
-    )
-    md_path.write_text("\n".join(lines), encoding="utf-8")
-    print("WROTE {}".format(json_path), flush=True)
-    print("WROTE {}".format(md_path), flush=True)
+    print("WROTE {} summary for {}".format(split, args.method), flush=True)
 
 
 def parse_args():
@@ -982,58 +481,30 @@ def parse_args():
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=REPO / "output" / "tcp_textbaseline_layerbasis_xproto_full100",
+        default=REPO / "output" / "confusion_aware_from_scratch",
     )
+    parser.add_argument("--bank-root", type=Path)
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--python", default=r"D:\Anaconda\python.exe")
-    parser.add_argument("--method", default=METHOD)
-    parser.add_argument("--baseline-method", default=BASELINE_METHOD)
-    parser.add_argument("--init-baseline-root", type=Path)
-    parser.add_argument(
-        "--comparison-baseline-root",
-        type=Path,
-        help="Root containing paired baseline validation records for summaries",
-    )
-    parser.add_argument("--init-baseline-checkpoint", type=Path)
-    parser.add_argument(
-        "--init-baseline-selection",
-        choices=SELECTION_METRICS,
-        default="balanced_accuracy",
-    )
-    parser.add_argument(
-        "--description-cache",
-        type=Path,
-        default=REPO / "output" / "_tcp_prior_cache" / "dermamnist_biomedcoop50.pt",
-    )
-    parser.add_argument(
-        "--layer-description-cache",
-        type=Path,
-        default=(
-            REPO
-            / "output"
-            / "_tcp_prior_cache"
-            / "dermamnist_biomedcoop50_layer8_cls.pt"
-        ),
-    )
-    parser.add_argument(
-        "--summary-prefix", default="full100_layerbasis_xproto_validation"
-    )
-    parser.add_argument("--shots", nargs="+", type=int, default=(4, 8, 16, 32))
-    parser.add_argument("--seeds", nargs="+", type=int, default=(1, 2, 3))
+    parser.add_argument("--method")
+    parser.add_argument("--variant", choices=CONFUSION_VARIANTS, default="b0")
+    parser.add_argument("--description-cache", type=Path, default=REPO / "output" / "_tcp_prior_cache" / "dermamnist_biomedcoop50.pt")
+    parser.add_argument("--layer-description-cache", type=Path, default=REPO / "output" / "_tcp_prior_cache" / "dermamnist_biomedcoop50_layer8_cls.pt")
+    parser.add_argument("--shots", nargs="+", type=int, default=DEFAULT_SHOTS)
+    parser.add_argument("--seeds", nargs="+", type=int, default=DEFAULT_SEEDS)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--checkpoint-freq", type=int, default=10)
     parser.add_argument("--max-parallel", type=int, default=1)
+    parser.add_argument("--prior-alpha", type=float, default=1.0)
+    parser.add_argument("--gamma", type=float, default=0.2)
+    parser.add_argument("--lambda-conf", type=float, default=1.0)
     parser.add_argument("--aggregate-only", action="store_true")
     parser.add_argument("--skip-aggregate", action="store_true")
     parser.add_argument("--validation-only", action="store_true")
-    parser.add_argument(
-        "--evaluate-existing",
-        action="store_true",
-        help="Evaluate already-trained dual validation checkpoints; never train",
-    )
+    parser.add_argument("--evaluate-existing", action="store_true")
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -1042,24 +513,22 @@ def main():
     args = parse_args()
     if args.validation_only and args.evaluate_existing:
         raise ValueError("--validation-only and --evaluate-existing are exclusive")
-    if args.evaluate_existing:
-        _require_validation_gate(args)
+    if args.variant != "b0" and args.bank_root is None:
+        raise ValueError("Non-b0 variants require --bank-root")
+    args.output_root = args.output_root.resolve()
+    args.method = args.method or method_name(args.variant)
     if args.worker:
         if args.run_dir is None or args.seed is None or len(args.shots) != 1:
-            raise ValueError(
-                "Worker mode requires --run-dir, --seed, and exactly one --shots"
-            )
+            raise ValueError("Worker requires --run-dir, --seed and exactly one shot")
         args.shots = args.shots[0]
         run_worker(args)
         return
-    args.output_root = args.output_root.resolve()
+    if args.evaluate_existing:
+        _require_validation_grid(args)
     if not args.aggregate_only:
         launch(args)
     if not args.skip_aggregate:
-        if args.validation_only:
-            aggregate_validation(args)
-        else:
-            aggregate(args)
+        aggregate(args, validation_only=args.validation_only)
 
 
 if __name__ == "__main__":

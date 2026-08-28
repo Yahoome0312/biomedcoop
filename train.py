@@ -134,8 +134,8 @@ def extend_cfg(cfg):
     cfg.TRAINER.COOPVPT.OPTIM.WARMUP_TYPE = "constant"
     cfg.TRAINER.COOPVPT.OPTIM.WARMUP_CONS_LR = 1e-5
 
-    # Final reported multi-description TCP path (LayerBasis + XProto).
-    # Disabling it preserves the original CoOp+VPT code path.
+    # From-scratch multi-description TCP path. The legacy warm-start and
+    # auxiliary-loss fields remain parseable only to reject old checkpoints.
     cfg.TRAINER.TCP = CN()
     cfg.TRAINER.TCP.ENABLED = False
     cfg.TRAINER.TCP.NUM_TOKENS = 4
@@ -146,14 +146,22 @@ def extend_cfg(cfg):
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = ""
     cfg.TRAINER.TCP.LAYER_DESCRIPTION_CACHE = ""
     cfg.TRAINER.TCP.GATE_INIT = 0.05
-    cfg.TRAINER.TCP.KG_WEIGHT = 4.0
-    cfg.TRAINER.TCP.RESIDUAL_WARMUP_EPOCHS = 10
-    cfg.TRAINER.TCP.PROMPT_ANCHOR_WEIGHT = 4.0
-    cfg.TRAINER.TCP.PROMPT_ANCHOR_L2_WEIGHT = 0.5
-    cfg.TRAINER.TCP.EVAL_WARMSTART = True
-    cfg.TRAINER.TCP.CROSS_MODAL_PROTO_WEIGHT = 0.5
+    cfg.TRAINER.TCP.KG_WEIGHT = 0.0
+    cfg.TRAINER.TCP.RESIDUAL_WARMUP_EPOCHS = 0
+    cfg.TRAINER.TCP.PROMPT_ANCHOR_WEIGHT = 0.0
+    cfg.TRAINER.TCP.PROMPT_ANCHOR_L2_WEIGHT = 0.0
+    cfg.TRAINER.TCP.EVAL_WARMSTART = False
+    cfg.TRAINER.TCP.CROSS_MODAL_PROTO_WEIGHT = 0.0
     cfg.TRAINER.TCP.CROSS_MODAL_PROTO_TEMPERATURE = 0.1
     cfg.TRAINER.TCP.INIT_BASELINE_CHECKPOINT = ""
+
+    cfg.TRAINER.CONFUSION_AWARE = CN()
+    cfg.TRAINER.CONFUSION_AWARE.VARIANT = "b0"
+    cfg.TRAINER.CONFUSION_AWARE.BANK_ROOT = ""
+    cfg.TRAINER.CONFUSION_AWARE.PRIOR_ALPHA = 1.0
+    cfg.TRAINER.CONFUSION_AWARE.GAMMA = 0.2
+    cfg.TRAINER.CONFUSION_AWARE.LAMBDA_CONF = 1.0
+    cfg.TRAINER.CONFUSION_AWARE.PRIOR_TYPE = "soft_probability_mean"
 
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 4  # number of context vectors

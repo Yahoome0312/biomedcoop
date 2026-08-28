@@ -124,7 +124,7 @@ class TimmViTVisualPromptEncoder(nn.Module):
             return checkpoint(block, x, use_reentrant=False)
         return block(x)
 
-    def forward(self, image):
+    def forward(self, image, return_tokens=False):
         trunk = self.trunk
         x = trunk.patch_embed(image)
         x = trunk._pos_embed(x)
@@ -139,5 +139,9 @@ class TimmViTVisualPromptEncoder(nn.Module):
 
         x = self._remove_prompt(x)
         x = trunk.norm(x)
-        x = trunk.forward_head(x)
-        return self.head(x)
+        patch_tokens = x[:, self.num_prefix_tokens :]
+        pooled = trunk.forward_head(x)
+        projected = self.head(pooled)
+        if return_tokens:
+            return projected, patch_tokens
+        return projected

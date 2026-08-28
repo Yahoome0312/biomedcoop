@@ -89,6 +89,12 @@ class Classification(EvaluatorBase):
         balanced_acc = 100.0 * balanced_accuracy_score(
             self._y_true, self._y_pred
         )
+        macro_recall = 100.0 * precision_recall_fscore_support(
+            self._y_true,
+            self._y_pred,
+            average="macro",
+            zero_division=0,
+        )[1]
 
         labels = np.arange(len(self._y_score[0]))
         try:
@@ -109,6 +115,7 @@ class Classification(EvaluatorBase):
         results["error_rate"] = err
         results["macro_f1"] = macro_f1
         results["balanced_accuracy"] = balanced_acc
+        results["macro_recall"] = macro_recall
         results["auc"] = macro_auc
 
         print(
@@ -119,6 +126,7 @@ class Classification(EvaluatorBase):
             f"* error: {err:.2f}%\n"
             f"* macro_f1: {macro_f1:.2f}%\n"
             f"* balanced_accuracy: {balanced_acc:.2f}%\n"
+            f"* macro_recall: {macro_recall:.2f}%\n"
             f"* auc: {macro_auc:.2f}%"
         )
 
@@ -188,11 +196,13 @@ class Classification(EvaluatorBase):
             results["perclass_accuracy"] = mean_acc
 
         if self.cfg.TEST.COMPUTE_CMAT:
+            raw_cmat = confusion_matrix(self._y_true, self._y_pred)
             cmat = confusion_matrix(
                 self._y_true, self._y_pred, normalize="true"
             )
             save_path = osp.join(self.cfg.OUTPUT_DIR, "cmat.pt")
             torch.save(cmat, save_path)
+            torch.save(raw_cmat, osp.join(self.cfg.OUTPUT_DIR, "cmat_raw.pt"))
             print('Confusion matrix is saved to "{}"'.format(save_path))
 
         return results
