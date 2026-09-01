@@ -1,242 +1,242 @@
 {
 "dyed lifted polyps": {
 "dyed resection margins": [
-"Compared with dyed lifted polyps, dyed resection margins differ in showing a flat or slightly depressed cut edge rather than a raised polypoid mound.",
-"Compared with dyed lifted polyps, dyed resection margins differ in having dye concentrated around a resection boundary instead of coating an elevated lesion."
+"Compared with dyed lifted polyps, dyed resection margins differ in showing a flatter stained defect with sharply outlined peripheral edges rather than a protruding elevated lesion.",
+"Compared with dyed lifted polyps, dyed resection margins differ in having an irregular exposed central surface bordered by dye instead of a rounded lifted mucosal mound."
 ],
 "esophagitis": [
-"Compared with dyed lifted polyps, esophagitis differs in showing longitudinal erythematous streaks or erosions rather than a discrete blue-stained raised lesion.",
-"Compared with dyed lifted polyps, esophagitis differs in having inflamed esophageal mucosa without a rounded protruding polyp surface."
+"Compared with dyed lifted polyps, esophagitis differs in showing diffuse erythematous or eroded mucosa without a focal dye-stained elevated mass.",
+"Compared with dyed lifted polyps, esophagitis differs in having longitudinal mucosal breaks and patchy redness rather than a discrete protruding stained lesion."
 ],
 "normal cecum": [
-"Compared with dyed lifted polyps, normal cecum differs in showing smooth pale mucosa with visible landmarks rather than a dyed elevated lesion.",
-"Compared with dyed lifted polyps, normal cecum differs in lacking focal blue-stained protrusions or irregular lesion borders."
+"Compared with dyed lifted polyps, normal cecum differs in showing pale smooth mucosa with regular vascular markings and no focal elevated stained lesion.",
+"Compared with dyed lifted polyps, normal cecum differs in having a broad open colonic lumen and uniform folds without concentrated blue dye around a protrusion."
 ],
 "normal pylorus": [
-"Compared with dyed lifted polyps, normal pylorus differs in showing a central circular opening with radial folds rather than a localized lifted mound.",
-"Compared with dyed lifted polyps, normal pylorus differs in having uniform mucosa without blue dye pooling around a polyp."
+"Compared with dyed lifted polyps, normal pylorus differs in showing smooth gastric folds converging toward a rounded pyloric opening rather than a focal dyed mucosal elevation.",
+"Compared with dyed lifted polyps, normal pylorus differs in having uniformly colored mucosa and a central circular or slit-like lumen without a stained protruding lesion."
 ],
 "normal z line": [
-"Compared with dyed lifted polyps, normal z line differs in showing a ring-like mucosal color transition rather than a raised dyed lesion.",
-"Compared with dyed lifted polyps, normal z line differs in having a regular junctional boundary without polypoid elevation."
+"Compared with dyed lifted polyps, normal z line differs in showing a flat circumferential squamocolumnar color transition rather than an elevated dye-stained lesion.",
+"Compared with dyed lifted polyps, normal z line differs in having a regular scalloped junction between pale and salmon-colored mucosa without a protruding stained mound."
 ],
 "polyps": [
-"Compared with dyed lifted polyps, polyps differ in appearing as raised mucosal lesions without blue dye enhancement.",
-"Compared with dyed lifted polyps, polyps differ in showing natural mucosal color rather than a stained lifting cushion around the lesion."
+"Compared with dyed lifted polyps, polyps differ in lacking prominent blue dye surrounding or coating the elevated lesion.",
+"Compared with dyed lifted polyps, polyps differ in appearing as naturally colored sessile or pedunculated protrusions without a conspicuous stained submucosal elevation."
 ],
 "ulcerative colitis": [
-"Compared with dyed lifted polyps, ulcerative colitis differs in showing diffuse inflamed mucosa rather than a single blue-stained raised lesion.",
-"Compared with dyed lifted polyps, ulcerative colitis differs in having broad redness, granularity, or ulceration without a focal lifted polyp contour."
+"Compared with dyed lifted polyps, ulcerative colitis differs in showing broad areas of diffusely red, granular, friable-looking mucosa rather than a solitary stained elevation.",
+"Compared with dyed lifted polyps, ulcerative colitis differs in having widespread loss of normal vascular pattern with superficial erosive texture instead of a discrete dye-highlighted polypoid mound."
 ]
 },
 "dyed resection margins": {
 "dyed lifted polyps": [
-"Compared with dyed resection margins, dyed lifted polyps differ in showing a raised blue-stained mound rather than a flat resection edge.",
-"Compared with dyed resection margins, dyed lifted polyps differ in having dye outlining an elevated lesion instead of a cut mucosal boundary."
+"Compared with dyed resection margins, dyed lifted polyps differ in showing a rounded or sessile elevated mound rather than a flat stained mucosal defect.",
+"Compared with dyed resection margins, dyed lifted polyps differ in having dye accentuating a protruding lesion and its surrounding cushion instead of outlining an irregular exposed resection edge."
 ],
 "esophagitis": [
-"Compared with dyed resection margins, esophagitis differs in showing linear reddish erosions rather than blue-dyed resection borders.",
-"Compared with dyed resection margins, esophagitis differs in lacking a sharply defined post-resection margin."
+"Compared with dyed resection margins, esophagitis differs in showing patchy or longitudinal erythematous mucosal breaks without a sharply demarcated dye-stained defect.",
+"Compared with dyed resection margins, esophagitis differs in having diffuse inflamed-looking surface changes rather than a localized flat area with stained peripheral margins."
 ],
 "normal cecum": [
-"Compared with dyed resection margins, normal cecum differs in showing smooth undyed mucosa with cecal landmarks rather than stained cut edges.",
-"Compared with dyed resection margins, normal cecum differs in lacking artificial dye contrast or resection-site irregularity."
+"Compared with dyed resection margins, normal cecum differs in showing smooth pale mucosa with regular vessels and no stained tissue defect.",
+"Compared with dyed resection margins, normal cecum differs in having intact folds and a broad colonic lumen rather than an irregular dye-bordered exposed surface."
 ],
 "normal pylorus": [
-"Compared with dyed resection margins, normal pylorus differs in showing a rounded pyloric opening rather than a dyed mucosal defect edge.",
-"Compared with dyed resection margins, normal pylorus differs in having regular radial folds without blue-stained resection outlines."
+"Compared with dyed resection margins, normal pylorus differs in showing intact smooth gastric mucosa surrounding a rounded pyloric opening rather than a stained mucosal defect.",
+"Compared with dyed resection margins, normal pylorus differs in having folds converging toward a central lumen without irregular exposed tissue or colored peripheral margins."
 ],
 "normal z line": [
-"Compared with dyed resection margins, normal z line differs in showing a natural color transition at the junction rather than dye-marked margins.",
-"Compared with dyed resection margins, normal z line differs in having a continuous ring-like boundary without a resection defect."
+"Compared with dyed resection margins, normal z line differs in showing a continuous flat junction between two mucosal colors rather than an irregular dye-stained resection bed.",
+"Compared with dyed resection margins, normal z line differs in having a regular circumferential or scalloped boundary without exposed central tissue."
 ],
 "polyps": [
-"Compared with dyed resection margins, polyps differ in showing protruding mucosal tissue rather than a flat stained resection border.",
-"Compared with dyed resection margins, polyps differ in lacking blue dye marking around a removed-lesion edge."
+"Compared with dyed resection margins, polyps differ in presenting as intact protruding mucosal lesions rather than flat irregular tissue defects.",
+"Compared with dyed resection margins, polyps differ in lacking the conspicuous blue-stained peripheral border and exposed central resection surface."
 ],
 "ulcerative colitis": [
-"Compared with dyed resection margins, ulcerative colitis differs in showing diffuse erythema and mucosal granularity rather than localized dyed margins.",
-"Compared with dyed resection margins, ulcerative colitis differs in lacking a clear surgical-looking resection boundary."
+"Compared with dyed resection margins, ulcerative colitis differs in showing diffuse erythema, granularity, and superficial mucosal irregularity rather than a single sharply bordered stained defect.",
+"Compared with dyed resection margins, ulcerative colitis differs in having widespread abnormal mucosal texture and reduced vascular visibility instead of localized dye-defined margins."
 ]
 },
 "esophagitis": {
 "dyed lifted polyps": [
-"Compared with esophagitis, dyed lifted polyps differ in showing a focal blue-stained raised lesion rather than linear inflamed streaks.",
-"Compared with esophagitis, dyed lifted polyps differ in having a rounded protruding contour instead of diffuse esophageal redness."
+"Compared with esophagitis, dyed lifted polyps differ in showing a discrete elevated lesion highlighted by blue dye rather than diffuse erythematous mucosal breaks.",
+"Compared with esophagitis, dyed lifted polyps differ in having a rounded focal protrusion with stained surrounding mucosa instead of longitudinal erosive streaks."
 ],
 "dyed resection margins": [
-"Compared with esophagitis, dyed resection margins differ in showing blue-stained cut edges rather than reddish longitudinal erosions.",
-"Compared with esophagitis, dyed resection margins differ in having a localized resection-site outline instead of inflamed mucosal bands."
+"Compared with esophagitis, dyed resection margins differ in showing a sharply localized flat defect with blue-stained borders rather than diffuse patchy redness and erosions.",
+"Compared with esophagitis, dyed resection margins differ in having an exposed central surface surrounded by distinct colored margins instead of irregular longitudinal mucosal breaks."
 ],
 "normal cecum": [
-"Compared with esophagitis, normal cecum differs in showing pale smooth colonic mucosa rather than red irritated esophageal lining.",
-"Compared with esophagitis, normal cecum differs in having cecal landmarks without erosive streaks or mucosal breaks."
+"Compared with esophagitis, normal cecum differs in showing smooth pale mucosa with a clearly visible regular vascular pattern rather than erythematous eroded areas.",
+"Compared with esophagitis, normal cecum differs in having broad colonic folds and an open lumen without linear mucosal breaks or patchy inflammatory-looking redness."
 ],
 "normal pylorus": [
-"Compared with esophagitis, normal pylorus differs in showing a central pyloric opening with folds rather than longitudinal inflamed mucosa.",
-"Compared with esophagitis, normal pylorus differs in having smoother, less erythematous mucosa without linear erosions."
+"Compared with esophagitis, normal pylorus differs in showing smooth gastric folds converging on a rounded opening rather than longitudinal erythematous mucosal injury.",
+"Compared with esophagitis, normal pylorus differs in having intact uniformly colored mucosa without erosive streaks or irregular red patches."
 ],
 "normal z line": [
-"Compared with esophagitis, normal z line differs in showing a regular color transition rather than irregular red erosions.",
-"Compared with esophagitis, normal z line differs in having a sharply defined junction without streak-like mucosal injury."
+"Compared with esophagitis, normal z line differs in showing a regular sharply defined squamocolumnar color boundary without erosions.",
+"Compared with esophagitis, normal z line differs in having smooth pale and salmon-colored mucosal regions separated by an orderly junction rather than patchy redness and mucosal breaks."
 ],
 "polyps": [
-"Compared with esophagitis, polyps differ in showing discrete raised nodules rather than flat or linear inflamed mucosa.",
-"Compared with esophagitis, polyps differ in having focal protruding borders without diffuse esophageal redness."
+"Compared with esophagitis, polyps differ in showing focal sessile or pedunculated mucosal protrusions rather than predominantly flat erythematous erosions.",
+"Compared with esophagitis, polyps differ in having a discrete raised contour with relatively localized surface change instead of diffuse longitudinal mucosal abnormalities."
 ],
 "ulcerative colitis": [
-"Compared with esophagitis, ulcerative colitis differs in showing diffuse granular colonic inflammation rather than linear esophageal erosions.",
-"Compared with esophagitis, ulcerative colitis differs in having broad mucosal friability and ulcerated patches instead of streak-like redness."
+"Compared with esophagitis, ulcerative colitis differs in showing diffuse granular colonic mucosa with widespread vascular loss rather than predominantly longitudinal esophageal erosions.",
+"Compared with esophagitis, ulcerative colitis differs in having broad continuous areas of coarse erythematous mucosal texture instead of separated linear mucosal breaks."
 ]
 },
 "normal cecum": {
 "dyed lifted polyps": [
-"Compared with normal cecum, dyed lifted polyps differ in showing a focal blue-stained elevated lesion rather than smooth pale mucosa.",
-"Compared with normal cecum, dyed lifted polyps differ in having irregular dyed lesion borders instead of normal cecal landmarks."
+"Compared with normal cecum, dyed lifted polyps differ in showing a focal protruding mucosal lesion with conspicuous blue staining rather than uniformly smooth pale mucosa.",
+"Compared with normal cecum, dyed lifted polyps differ in having localized elevation and dye pooling that disrupt the otherwise regular mucosal and vascular pattern."
 ],
 "dyed resection margins": [
-"Compared with normal cecum, dyed resection margins differ in showing blue-stained mucosal edges rather than intact smooth mucosa.",
-"Compared with normal cecum, dyed resection margins differ in having a localized resection defect instead of continuous normal lining."
+"Compared with normal cecum, dyed resection margins differ in showing an irregular flat tissue defect bordered by blue dye rather than intact smooth mucosa.",
+"Compared with normal cecum, dyed resection margins differ in having a sharply demarcated exposed central region with stained edges instead of continuous normal vascularized surface."
 ],
 "esophagitis": [
-"Compared with normal cecum, esophagitis differs in showing red inflamed streaks rather than pale cecal mucosa.",
-"Compared with normal cecum, esophagitis differs in lacking cecal landmarks such as the appendiceal-orifice region or broad colonic folds."
+"Compared with normal cecum, esophagitis differs in showing erythematous patches and linear mucosal breaks rather than smooth pale colonic mucosa with regular vessels.",
+"Compared with normal cecum, esophagitis differs in having a narrower tubular appearance with longitudinal folds and erosive surface changes."
 ],
 "normal pylorus": [
-"Compared with normal cecum, normal pylorus differs in showing a central circular opening with radial gastric folds.",
-"Compared with normal cecum, normal pylorus differs in having a tighter ring-like lumen rather than a broad cecal cavity."
+"Compared with normal cecum, normal pylorus differs in showing thick gastric folds converging toward a distinct round or slit-like central opening.",
+"Compared with normal cecum, normal pylorus differs in having a more compact rosette-like luminal configuration rather than a broad colonic cavity with flatter folds."
 ],
 "normal z line": [
-"Compared with normal cecum, normal z line differs in showing a distinct squamocolumnar color transition rather than uniform colonic mucosa.",
-"Compared with normal cecum, normal z line differs in having a circumferential junctional line without cecal pouch-like anatomy."
+"Compared with normal cecum, normal z line differs in showing a conspicuous circumferential transition between pale and salmon-colored mucosa.",
+"Compared with normal cecum, normal z line differs in having a narrow tubular lumen with a scalloped color junction rather than a broad uniformly colored colonic surface."
 ],
 "polyps": [
-"Compared with normal cecum, polyps differ in showing focal raised mucosal protrusions rather than a smooth continuous surface.",
-"Compared with normal cecum, polyps differ in having rounded lesion contours that interrupt the normal mucosal pattern."
+"Compared with normal cecum, polyps differ in showing one or more focal mucosal protrusions that interrupt the otherwise smooth luminal surface.",
+"Compared with normal cecum, polyps differ in having sessile or stalked raised contours rather than uniform flat mucosa with an uninterrupted vascular pattern."
 ],
 "ulcerative colitis": [
-"Compared with normal cecum, ulcerative colitis differs in showing diffuse redness, granularity, and mucosal irregularity.",
-"Compared with normal cecum, ulcerative colitis differs in lacking the smooth pale appearance and normal vascular pattern."
+"Compared with normal cecum, ulcerative colitis differs in showing diffuse erythema and granular uneven mucosa rather than a smooth pale surface.",
+"Compared with normal cecum, ulcerative colitis differs in having reduced or obscured vascular markings with widespread superficial irregularity."
 ]
 },
 "normal pylorus": {
 "dyed lifted polyps": [
-"Compared with normal pylorus, dyed lifted polyps differ in showing a blue-stained elevated lesion rather than a central pyloric opening.",
-"Compared with normal pylorus, dyed lifted polyps differ in having focal irregular elevation instead of symmetric radial folds."
+"Compared with normal pylorus, dyed lifted polyps differ in showing a localized blue-stained elevated lesion rather than smooth folds surrounding a central pyloric opening.",
+"Compared with normal pylorus, dyed lifted polyps differ in having an asymmetric protruding mound with dye accumulation instead of a regular converging fold pattern."
 ],
 "dyed resection margins": [
-"Compared with normal pylorus, dyed resection margins differ in showing blue-stained resection borders rather than an intact circular outlet.",
-"Compared with normal pylorus, dyed resection margins differ in having a flat mucosal defect edge instead of regular pyloric folds."
+"Compared with normal pylorus, dyed resection margins differ in showing a flat irregular defect with stained peripheral edges rather than intact gastric mucosa.",
+"Compared with normal pylorus, dyed resection margins differ in having exposed uneven central tissue and blue dye instead of smooth folds converging toward a natural opening."
 ],
 "esophagitis": [
-"Compared with normal pylorus, esophagitis differs in showing elongated red erosions rather than a round pyloric channel.",
-"Compared with normal pylorus, esophagitis differs in having inflamed linear mucosa without a central sphincter-like opening."
+"Compared with normal pylorus, esophagitis differs in showing longitudinal erythematous erosions and patchy mucosal breaks rather than smooth gastric folds.",
+"Compared with normal pylorus, esophagitis differs in having an elongated tubular lumen with inflamed-looking surface changes instead of a rounded pyloric aperture."
 ],
 "normal cecum": [
-"Compared with normal pylorus, normal cecum differs in showing a broader pale colonic cavity rather than a tight circular opening.",
-"Compared with normal pylorus, normal cecum differs in having cecal landmarks instead of radial gastric folds."
+"Compared with normal pylorus, normal cecum differs in showing a broader colonic cavity with thinner folds and more evident superficial vascular markings.",
+"Compared with normal pylorus, normal cecum differs in lacking the characteristic convergence of thick folds toward a compact round or slit-like opening."
 ],
 "normal z line": [
-"Compared with normal pylorus, normal z line differs in showing a mucosal color junction rather than a circular pyloric aperture.",
-"Compared with normal pylorus, normal z line differs in having a ring-like transition line without radial folds converging into an opening."
+"Compared with normal pylorus, normal z line differs in showing a distinct circumferential junction between pale and salmon-colored mucosa rather than converging gastric folds.",
+"Compared with normal pylorus, normal z line differs in having a scalloped color transition within a tubular lumen instead of a central pyloric aperture."
 ],
 "polyps": [
-"Compared with normal pylorus, polyps differ in showing discrete protruding lesions rather than a normal central opening.",
-"Compared with normal pylorus, polyps differ in having raised rounded tissue that disrupts the surrounding mucosal surface."
+"Compared with normal pylorus, polyps differ in showing discrete raised sessile or pedunculated lesions rather than uniformly smooth gastric folds.",
+"Compared with normal pylorus, polyps differ in having focal protrusions that distort the mucosal contour without forming a regular central pyloric opening."
 ],
 "ulcerative colitis": [
-"Compared with normal pylorus, ulcerative colitis differs in showing diffuse inflamed granular mucosa rather than smooth pyloric folds.",
-"Compared with normal pylorus, ulcerative colitis differs in lacking a symmetric central opening and showing irregular ulcerated areas."
+"Compared with normal pylorus, ulcerative colitis differs in showing widespread red granular mucosa with obscured vascular detail rather than smooth intact gastric folds.",
+"Compared with normal pylorus, ulcerative colitis differs in having diffuse superficial irregularity rather than an orderly fold pattern converging on a rounded lumen."
 ]
 },
 "normal z line": {
 "dyed lifted polyps": [
-"Compared with normal z line, dyed lifted polyps differ in showing a blue-stained raised lesion rather than a flat color-transition line.",
-"Compared with normal z line, dyed lifted polyps differ in having focal polypoid elevation instead of a regular circumferential junction."
+"Compared with normal z line, dyed lifted polyps differ in showing a discrete elevated lesion with blue staining rather than a flat orderly mucosal color junction.",
+"Compared with normal z line, dyed lifted polyps differ in having a focal rounded protrusion that disrupts surface contour instead of a circumferential scalloped transition."
 ],
 "dyed resection margins": [
-"Compared with normal z line, dyed resection margins differ in showing stained resection edges rather than a natural mucosal junction.",
-"Compared with normal z line, dyed resection margins differ in having an irregular defect border instead of a smooth transition line."
+"Compared with normal z line, dyed resection margins differ in showing an irregular exposed defect with blue-stained borders rather than an intact circumferential mucosal junction.",
+"Compared with normal z line, dyed resection margins differ in having a localized uneven central surface instead of a smooth boundary between pale and salmon-colored mucosa."
 ],
 "esophagitis": [
-"Compared with normal z line, esophagitis differs in showing red erosive streaks rather than a clean mucosal color boundary.",
-"Compared with normal z line, esophagitis differs in having irregular inflammation extending along the mucosa."
+"Compared with normal z line, esophagitis differs in showing erythematous mucosal breaks and irregular erosive streaks rather than a smooth intact junction.",
+"Compared with normal z line, esophagitis differs in having patchy redness extending along the tubular wall instead of a sharply organized color transition."
 ],
 "normal cecum": [
-"Compared with normal z line, normal cecum differs in showing pale colonic mucosa with cecal landmarks rather than a junctional ring.",
-"Compared with normal z line, normal cecum differs in lacking the abrupt color transition between two mucosal types."
+"Compared with normal z line, normal cecum differs in showing a broad colonic lumen with relatively uniform pale mucosa and visible vascular markings.",
+"Compared with normal z line, normal cecum differs in lacking the conspicuous scalloped transition between two differently colored mucosal surfaces."
 ],
 "normal pylorus": [
-"Compared with normal z line, normal pylorus differs in showing a central opening with radial folds rather than a color-transition line.",
-"Compared with normal z line, normal pylorus differs in having a sphincter-like circular aperture instead of a flat junctional boundary."
+"Compared with normal z line, normal pylorus differs in showing thick smooth folds converging toward a rounded or slit-like central opening.",
+"Compared with normal z line, normal pylorus differs in lacking a circumferential pale-to-salmon mucosal boundary and instead has a rosette-like fold arrangement."
 ],
 "polyps": [
-"Compared with normal z line, polyps differ in showing raised nodular mucosal lesions rather than a flat circumferential transition.",
-"Compared with normal z line, polyps differ in having focal protrusions that interrupt the mucosal surface."
+"Compared with normal z line, polyps differ in showing discrete protruding mucosal masses rather than a flat circumferential junction.",
+"Compared with normal z line, polyps differ in having sessile or stalked elevations that alter the surface contour instead of an orderly scalloped color line."
 ],
 "ulcerative colitis": [
-"Compared with normal z line, ulcerative colitis differs in showing diffuse red granular mucosa rather than a sharply defined junction.",
-"Compared with normal z line, ulcerative colitis differs in having patchy ulceration or friable texture instead of a smooth color boundary."
+"Compared with normal z line, ulcerative colitis differs in showing broad areas of red granular uneven mucosa rather than smooth mucosa separated by a regular color boundary.",
+"Compared with normal z line, ulcerative colitis differs in having diffuse loss of vascular definition and superficial irregularity instead of an intact circumferential junction."
 ]
 },
 "polyps": {
 "dyed lifted polyps": [
-"Compared with polyps, dyed lifted polyps differ in showing blue dye around or over the raised lesion.",
-"Compared with polyps, dyed lifted polyps differ in having a lifted cushion-like appearance that enhances the lesion border."
+"Compared with polyps, dyed lifted polyps differ in showing conspicuous blue dye around or beneath the raised lesion.",
+"Compared with polyps, dyed lifted polyps differ in having a dye-accentuated elevated cushion or stained surrounding mucosa rather than a naturally colored protrusion alone."
 ],
 "dyed resection margins": [
-"Compared with polyps, dyed resection margins differ in showing flat blue-stained cut edges rather than protruding mucosal tissue.",
-"Compared with polyps, dyed resection margins differ in lacking a rounded intact polyp surface."
+"Compared with polyps, dyed resection margins differ in showing a flat irregular mucosal defect with blue-stained edges rather than an intact protruding lesion.",
+"Compared with polyps, dyed resection margins differ in having an exposed central surface and sharply defined colored border instead of a sessile or pedunculated mass."
 ],
 "esophagitis": [
-"Compared with polyps, esophagitis differs in showing linear red erosions rather than discrete raised nodules.",
-"Compared with polyps, esophagitis differs in having diffuse inflamed mucosa without focal polypoid borders."
+"Compared with polyps, esophagitis differs in showing predominantly flat erythematous mucosa with longitudinal erosions rather than discrete raised lesions.",
+"Compared with polyps, esophagitis differs in having diffuse mucosal breaks and patchy redness without a focal sessile or stalked contour."
 ],
 "normal cecum": [
-"Compared with polyps, normal cecum differs in showing smooth pale mucosa rather than raised lesion contours.",
-"Compared with polyps, normal cecum differs in having normal cecal landmarks without focal protrusions."
+"Compared with polyps, normal cecum differs in showing smooth continuous mucosa with regular vascular markings and no focal protrusions.",
+"Compared with polyps, normal cecum differs in having a relatively uniform luminal contour without sessile or pedunculated raised lesions."
 ],
 "normal pylorus": [
-"Compared with polyps, normal pylorus differs in showing a central circular opening rather than a rounded mucosal mass.",
-"Compared with polyps, normal pylorus differs in having symmetric radial folds instead of an isolated raised lesion."
+"Compared with polyps, normal pylorus differs in showing regular smooth folds converging toward a central round or slit-like opening rather than a focal mucosal mass.",
+"Compared with polyps, normal pylorus differs in having a symmetric pyloric configuration without an isolated raised lesion disrupting the surface."
 ],
 "normal z line": [
-"Compared with polyps, normal z line differs in showing a flat circumferential color transition rather than a protruding lesion.",
-"Compared with polyps, normal z line differs in having a regular junctional contour without nodular elevation."
+"Compared with polyps, normal z line differs in showing a flat scalloped transition between pale and salmon-colored mucosa rather than a protruding lesion.",
+"Compared with polyps, normal z line differs in having an orderly circumferential boundary without sessile or stalked elevation."
 ],
 "ulcerative colitis": [
-"Compared with polyps, ulcerative colitis differs in showing diffuse inflamed granular mucosa rather than isolated raised nodules.",
-"Compared with polyps, ulcerative colitis differs in having broad redness and ulcerated texture without a single smooth polyp contour."
+"Compared with polyps, ulcerative colitis differs in showing diffuse red granular mucosa and widespread surface irregularity rather than isolated raised lesions.",
+"Compared with polyps, ulcerative colitis differs in having broad loss of normal vascular visibility and superficial erosive texture instead of a discrete polypoid contour."
 ]
 },
 "ulcerative colitis": {
 "dyed lifted polyps": [
-"Compared with ulcerative colitis, dyed lifted polyps differ in showing a focal blue-stained elevated lesion rather than diffuse inflamed mucosa.",
-"Compared with ulcerative colitis, dyed lifted polyps differ in having a discrete rounded border instead of broad granular redness."
+"Compared with ulcerative colitis, dyed lifted polyps differ in showing a localized blue-stained elevated lesion rather than widespread red granular mucosa.",
+"Compared with ulcerative colitis, dyed lifted polyps differ in having a discrete smooth or lobulated protrusion with dye accentuation instead of diffuse superficial mucosal irregularity."
 ],
 "dyed resection margins": [
-"Compared with ulcerative colitis, dyed resection margins differ in showing localized blue-stained cut edges rather than widespread mucosal inflammation.",
-"Compared with ulcerative colitis, dyed resection margins differ in having a defined resection boundary instead of diffuse friable texture."
+"Compared with ulcerative colitis, dyed resection margins differ in showing a single sharply localized flat defect with blue-stained peripheral margins rather than diffuse mucosal abnormality.",
+"Compared with ulcerative colitis, dyed resection margins differ in having a clearly outlined exposed central surface instead of widespread granularity and erythema."
 ],
 "esophagitis": [
-"Compared with ulcerative colitis, esophagitis differs in showing longitudinal red erosions rather than broad granular colonic inflammation.",
-"Compared with ulcerative colitis, esophagitis differs in having streak-like mucosal injury instead of diffuse ulcerated patches."
+"Compared with ulcerative colitis, esophagitis differs in showing more linear or longitudinal mucosal breaks along a tubular lumen rather than broad granular colonic surface change.",
+"Compared with ulcerative colitis, esophagitis differs in having patchy erythematous erosions separated by smoother mucosa instead of extensive diffuse vascular obscuration."
 ],
 "normal cecum": [
-"Compared with ulcerative colitis, normal cecum differs in showing smooth pale mucosa rather than diffuse erythema and granularity.",
-"Compared with ulcerative colitis, normal cecum differs in having recognizable normal landmarks without ulcerated or friable areas."
+"Compared with ulcerative colitis, normal cecum differs in showing smooth pale mucosa with a regular visible vascular network rather than diffuse redness and granularity.",
+"Compared with ulcerative colitis, normal cecum differs in having an even intact surface without widespread superficial erosions or coarse mucosal texture."
 ],
 "normal pylorus": [
-"Compared with ulcerative colitis, normal pylorus differs in showing a smooth circular opening with radial folds rather than irregular inflamed mucosa.",
-"Compared with ulcerative colitis, normal pylorus differs in lacking diffuse redness, granularity, and ulcerated surface changes."
+"Compared with ulcerative colitis, normal pylorus differs in showing smooth intact gastric folds converging toward a rounded central opening rather than diffuse granular mucosa.",
+"Compared with ulcerative colitis, normal pylorus differs in having uniform surface coloration and an orderly fold pattern without widespread erythematous irregularity."
 ],
 "normal z line": [
-"Compared with ulcerative colitis, normal z line differs in showing a regular mucosal color transition rather than diffuse granular inflammation.",
-"Compared with ulcerative colitis, normal z line differs in having a smooth junctional boundary without broad ulceration."
+"Compared with ulcerative colitis, normal z line differs in showing smooth mucosa with a sharply recognizable pale-to-salmon circumferential transition.",
+"Compared with ulcerative colitis, normal z line differs in having an orderly scalloped junction and intact surface rather than diffuse redness, granularity, and vascular loss."
 ],
 "polyps": [
-"Compared with ulcerative colitis, polyps differ in showing discrete raised nodules rather than widespread inflamed mucosal texture.",
-"Compared with ulcerative colitis, polyps differ in having localized protruding borders instead of diffuse redness and surface granularity."
+"Compared with ulcerative colitis, polyps differ in showing discrete sessile or pedunculated protrusions rather than diffuse flat granular mucosal change.",
+"Compared with ulcerative colitis, polyps differ in having localized raised contours with surrounding relatively smoother mucosa instead of widespread erythematous surface irregularity."
 ]
 }
 }
