@@ -1,0 +1,92 @@
+{
+"healthy knee": {
+"doubtful osteoarthritis": [
+"Compared with healthy knee, doubtful osteoarthritis differs in showing possible minute marginal osteophytes with essentially preserved joint space.",
+"Compared with healthy knee, doubtful osteoarthritis differs in subtle articular-margin lipping without definite subchondral sclerosis or deformity."
+],
+"minimal osteoarthritis": [
+"Compared with healthy knee, minimal osteoarthritis differs in showing definite small marginal osteophytes and possible mild joint-space narrowing.",
+"Compared with healthy knee, minimal osteoarthritis differs in mild irregularity of the tibiofemoral articular margins with early bony proliferation."
+],
+"moderate osteoarthritis": [
+"Compared with healthy knee, moderate osteoarthritis differs in showing multiple osteophytes, definite joint-space narrowing, and visible subchondral sclerosis.",
+"Compared with healthy knee, moderate osteoarthritis differs in clear compartment asymmetry and early contour alteration of the articulating bone ends."
+],
+"severe osteoarthritis": [
+"Compared with healthy knee, severe osteoarthritis differs in showing marked joint-space loss, large osteophytes, and extensive subchondral sclerosis.",
+"Compared with healthy knee, severe osteoarthritis differs in pronounced bony deformity, irregular articular contours, and possible near bone-on-bone contact."
+]
+},
+"doubtful osteoarthritis": {
+"healthy knee": [
+"Compared with doubtful osteoarthritis, healthy knee differs in lacking visible marginal osteophytes or articular-margin lipping.",
+"Compared with doubtful osteoarthritis, healthy knee differs in showing smooth bone contours and uniformly preserved joint spaces."
+],
+"minimal osteoarthritis": [
+"Compared with doubtful osteoarthritis, minimal osteoarthritis differs in showing definite rather than merely possible marginal osteophytes.",
+"Compared with doubtful osteoarthritis, minimal osteoarthritis differs in having more apparent articular-margin irregularity and possible mild joint-space narrowing."
+],
+"moderate osteoarthritis": [
+"Compared with doubtful osteoarthritis, moderate osteoarthritis differs in showing definite joint-space narrowing, multiple osteophytes, and subchondral sclerosis.",
+"Compared with doubtful osteoarthritis, moderate osteoarthritis differs in more conspicuous compartment asymmetry and early bony contour deformation."
+],
+"severe osteoarthritis": [
+"Compared with doubtful osteoarthritis, severe osteoarthritis differs in showing extensive joint-space loss, large osteophytes, and dense subchondral sclerosis.",
+"Compared with doubtful osteoarthritis, severe osteoarthritis differs in marked articular-surface irregularity and substantial deformation of the bone ends."
+]
+},
+"minimal osteoarthritis": {
+"healthy knee": [
+"Compared with minimal osteoarthritis, healthy knee differs in showing no definite osteophytes and smooth articular margins.",
+"Compared with minimal osteoarthritis, healthy knee differs in having uniformly maintained joint space without focal narrowing."
+],
+"doubtful osteoarthritis": [
+"Compared with minimal osteoarthritis, doubtful osteoarthritis differs in showing only possible minute osteophytes rather than definite bony projections.",
+"Compared with minimal osteoarthritis, doubtful osteoarthritis differs in having less articular-margin irregularity and more clearly preserved joint space."
+],
+"moderate osteoarthritis": [
+"Compared with minimal osteoarthritis, moderate osteoarthritis differs in showing more numerous osteophytes and definite joint-space narrowing.",
+"Compared with minimal osteoarthritis, moderate osteoarthritis differs in visible subchondral sclerosis and greater asymmetry of the tibiofemoral compartment."
+],
+"severe osteoarthritis": [
+"Compared with minimal osteoarthritis, severe osteoarthritis differs in showing marked or near-complete joint-space loss with much larger osteophytes.",
+"Compared with minimal osteoarthritis, severe osteoarthritis differs in extensive sclerosis, pronounced surface irregularity, and obvious bony deformity."
+]
+},
+"moderate osteoarthritis": {
+"healthy knee": [
+"Compared with moderate osteoarthritis, healthy knee differs in showing preserved joint spaces without definite compartmental narrowing.",
+"Compared with moderate osteoarthritis, healthy knee differs in lacking multiple osteophytes, subchondral sclerosis, and bony contour alteration."
+],
+"doubtful osteoarthritis": [
+"Compared with moderate osteoarthritis, doubtful osteoarthritis differs in showing essentially preserved joint space and only possible minute osteophytes.",
+"Compared with moderate osteoarthritis, doubtful osteoarthritis differs in lacking definite subchondral sclerosis and visible bone-end deformation."
+],
+"minimal osteoarthritis": [
+"Compared with moderate osteoarthritis, minimal osteoarthritis differs in showing smaller and fewer osteophytes with only possible mild joint-space narrowing.",
+"Compared with moderate osteoarthritis, minimal osteoarthritis differs in having little or no subchondral sclerosis and less compartment asymmetry."
+],
+"severe osteoarthritis": [
+"Compared with moderate osteoarthritis, severe osteoarthritis differs in showing more advanced joint-space collapse and larger, more extensive osteophytes.",
+"Compared with moderate osteoarthritis, severe osteoarthritis differs in denser sclerosis, greater articular-surface irregularity, and pronounced bony deformity."
+]
+},
+"severe osteoarthritis": {
+"healthy knee": [
+"Compared with severe osteoarthritis, healthy knee differs in showing wide, uniform joint spaces and smooth opposing articular contours.",
+"Compared with severe osteoarthritis, healthy knee differs in lacking osteophytes, subchondral sclerosis, and deformation of the bone ends."
+],
+"doubtful osteoarthritis": [
+"Compared with severe osteoarthritis, doubtful osteoarthritis differs in showing essentially preserved joint space with only possible minute marginal osteophytes.",
+"Compared with severe osteoarthritis, doubtful osteoarthritis differs in lacking extensive sclerosis, severe surface irregularity, and bony deformity."
+],
+"minimal osteoarthritis": [
+"Compared with severe osteoarthritis, minimal osteoarthritis differs in showing only small osteophytes and at most mild joint-space narrowing.",
+"Compared with severe osteoarthritis, minimal osteoarthritis differs in having relatively regular bone contours without marked sclerosis or joint collapse."
+],
+"moderate osteoarthritis": [
+"Compared with severe osteoarthritis, moderate osteoarthritis differs in showing less complete joint-space loss and less extensive osteophyte formation.",
+"Compared with severe osteoarthritis, moderate osteoarthritis differs in having milder subchondral sclerosis and less pronounced deformation of the articulating bone ends."
+]
+}
+}

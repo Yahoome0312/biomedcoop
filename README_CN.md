@@ -2,7 +2,7 @@
 
 ## 方法说明
 
-本仓库基于 BiomedCLIP 实现医学图像少样本提示学习。当前 DermaMNIST 主线使用 CoOp、Visual/Text VPT、可选 TCP 和固定的 Full Confusion 从头联合训练。Full Confusion 使用训练集 support 样本构建的 Soft Bank，不再提供其他 Confusion 变体。BiomedCLIP 主干保持冻结，仅更新提示及 Full Confusion 参数；K-shot 采样只作用于训练集，验证集和测试集保持官方完整划分。
+本仓库基于 BiomedCLIP 实现医学图像少样本提示学习。当前 DermaMNIST 主线使用 CoOp、Visual/Text VPT、可选 TCP 和固定的 Full Confusion 从头联合训练。Full Confusion 使用训练集 support 样本构建的 Soft Bank，并使用 LLM 给出的有向类别对描述生成 Semantic 特征，不再直接计算类别文本特征差。BiomedCLIP 主干保持冻结，仅更新提示及 Full Confusion 参数；K-shot 采样只作用于训练集，验证集和测试集保持官方完整划分。
 
 同一次实验中的可训练提示参数共用一套优化器和配置中的 `OPTIM.LR`，各提示分支不再设置独立学习率。训练、验证和测试的 `batch_size` 固定为 `32`，`num_workers` 固定为 `8`。实验 seed 只允许 `1、2、3`，每条训练命令运行其中一个 seed。cuDNN 使用 PyTorch 默认状态。
 
@@ -118,3 +118,23 @@ python scripts/coopvpt/build_confusion_prior.py `
 ```
 
 Soft Bank 路径已在 YAML 中固定为 `output/soft_confusion_banks`。训练阶段使用真实标签选择 Bank 行和困难负类；验证、测试阶段没有标签输入，使用基础 logits 的 top-1 选择 Bank 行。训练损失固定为交叉熵加 confusion margin loss。
+
+Semantic 特征来自 `confuse_pair/<数据集名称小写>.txt`。例如配置中的数据集名称为 `DermaMNIST`，对应文件为 `confuse_pair/dermamnist.txt`。文件必须是下面的 JSON 结构：
+
+```json
+{
+  "class a": {
+    "class b": [
+      "Compared with class a, class b differs in ...",
+      "Another directed distinction ..."
+    ]
+  },
+  "class b": {
+    "class a": [
+      "Compared with class b, class a differs in ..."
+    ]
+  }
+}
+```
+
+外层类别必须与数据集类别完全对应；每个类别必须包含指向其他所有类别的描述，不能包含自身；每个有向类别对可以有不同数量的描述，但列表不能为空。代码会动态读取类别数量，将同一有向类别对的全部描述通过冻结 BiomedCLIP 编码后平均，因此其他数据集不需要修改模型代码，只需增加同格式文件。

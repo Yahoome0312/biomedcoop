@@ -31,6 +31,141 @@ def decode_ascii(value: torch.Tensor) -> str:
     return bytes(value.detach().cpu().tolist()).decode("ascii")
 
 
+def _normalized_classname(value):
+    return " ".join(str(value).replace("_", " ").strip().casefold().split())
+
+
+def build_frozen_pair_description_bank(
+    model, tokenizer, classnames, description_file, batch_size=32
+):
+    """Load and encode every directed LLM class-pair description.
+
+    The JSON object must map each class name to every other class name, whose
+    value is a non-empty list of descriptions. Class count and description
+    count are inferred from the active dataset rather than fixed here.
+    """
+
+    description_file = Path(description_file)
+    if not description_file.is_file():
+        raise FileNotFoundError(
+            "LLM confusion-pair description file is missing: {}".format(
+                description_file
+            )
+        )
+    with description_file.open("r", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    if not isinstance(payload, dict):
+        raise ValueError("LLM pair description root must be a JSON object")
+
+    normalized_names = [_normalized_classname(name) for name in classnames]
+    if len(normalized_names) < 2 or len(set(normalized_names)) != len(normalized_names):
+        raise ValueError("Dataset class names must contain at least two unique classes")
+
+    normalized_payload = {}
+    for outer_name, targets in payload.items():
+        outer = _normalized_classname(outer_name)
+        if outer in normalized_payload:
+            raise ValueError("Duplicate normalized source class {!r}".format(outer))
+        if not isinstance(targets, dict):
+            raise ValueError("Descriptions for {!r} must be a JSON object".format(outer_name))
+        normalized_targets = {}
+        for target_name, descriptions in targets.items():
+            target = _normalized_classname(target_name)
+            if target in normalized_targets:
+                raise ValueError(
+                    "Duplicate normalized target class {!r} for {!r}".format(
+                        target, outer
+                    )
+                )
+            if (
+                not isinstance(descriptions, list)
+                or not descriptions
+                or any(not isinstance(text, str) or not text.strip() for text in descriptions)
+            ):
+                raise ValueError(
+                    "Pair ({!r}, {!r}) must contain non-empty description strings".format(
+                        outer_name, target_name
+                    )
+                )
+            normalized_targets[target] = [text.strip() for text in descriptions]
+        normalized_payload[outer] = normalized_targets
+
+    expected_classes = set(normalized_names)
+    if set(normalized_payload) != expected_classes:
+        raise ValueError(
+            "LLM pair source classes do not match dataset classes: expected {}, got {}".format(
+                sorted(expected_classes), sorted(normalized_payload)
+            )
+        )
+
+    ordered_pairs = []
+    flattened = []
+    canonical_descriptions = []
+    for first_index, first_name in enumerate(normalized_names):
+        targets = normalized_payload[first_name]
+        expected_targets = expected_classes - {first_name}
+        if set(targets) != expected_targets:
+            raise ValueError(
+                "LLM targets for {!r} do not match the other dataset classes".format(
+                    classnames[first_index]
+                )
+            )
+        for second_index, second_name in enumerate(normalized_names):
+            if first_index == second_index:
+                continue
+            descriptions = targets[second_name]
+            start = len(flattened)
+            flattened.extend(descriptions)
+            ordered_pairs.append((first_index, second_index, start, len(flattened)))
+            canonical_descriptions.append(
+                {
+                    "first": first_name,
+                    "second": second_name,
+                    "descriptions": descriptions,
+                }
+            )
+
+    tokenized = torch.cat([tokenizer(text) for text in flattened])
+    device = next(model.parameters()).device
+    encoded = []
+    with torch.no_grad():
+        for start in range(0, tokenized.shape[0], int(batch_size)):
+            batch = tokenized[start : start + int(batch_size)].to(device)
+            encoded.append(model.encode_text(batch, normalize=True).float().cpu())
+    features = torch.cat(encoded)
+    pair_bank = torch.zeros(
+        len(normalized_names),
+        len(normalized_names),
+        features.shape[-1],
+        dtype=torch.float32,
+    )
+    for first_index, second_index, start, end in ordered_pairs:
+        pair_bank[first_index, second_index] = F.normalize(
+            features[start:end].mean(dim=0), dim=0
+        )
+
+    canonical = json.dumps(
+        {
+            "class_order": normalized_names,
+            "pairs": canonical_descriptions,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    metadata = {
+        "source_file": str(description_file.resolve()),
+        "class_order": [str(name) for name in classnames],
+        "pair_count": len(ordered_pairs),
+        "description_count": len(flattened),
+        "description_fingerprint": _sha256_bytes(canonical),
+        "feature_fingerprint": _sha256_bytes(
+            pair_bank.contiguous().numpy().tobytes()
+        ),
+    }
+    return pair_bank, metadata
+
+
 def support_records(items):
     """Return the canonical support identity used by bank and trainer."""
 
@@ -216,6 +351,8 @@ class ConfusionAwareAdapter(nn.Module):
         self,
         soft_prior,
         bank_fingerprint,
+        pair_description_bank,
+        pair_feature_fingerprint,
         prior_alpha=1.0,
         gamma=0.2,
         feature_dim=512,
@@ -228,14 +365,30 @@ class ConfusionAwareAdapter(nn.Module):
             raise ValueError("gamma must be non-negative")
         self.feature_dim = int(feature_dim)
         self.patch_dim = int(patch_dim)
+        classes = soft_prior.shape[0]
+        if tuple(pair_description_bank.shape) != (
+            classes,
+            classes,
+            self.feature_dim,
+        ):
+            raise ValueError("LLM pair-description Bank shape is invalid")
         self.register_buffer("soft_prior", soft_prior.detach().float().clone())
+        self.register_buffer(
+            "pair_description_bank",
+            pair_description_bank.detach().float().clone(),
+            persistent=False,
+        )
         self.register_buffer(
             "_bank_fingerprint", _encode_ascii(str(bank_fingerprint))
         )
+        self.register_buffer(
+            "_pair_feature_fingerprint",
+            _encode_ascii(str(pair_feature_fingerprint)),
+        )
 
         self.semantic_projector = nn.Sequential(
-            nn.LayerNorm(2 * feature_dim),
-            nn.Linear(2 * feature_dim, feature_dim),
+            nn.LayerNorm(feature_dim),
+            nn.Linear(feature_dim, feature_dim),
             nn.GELU(),
             nn.Linear(feature_dim, feature_dim),
             nn.LayerNorm(feature_dim),
@@ -272,6 +425,10 @@ class ConfusionAwareAdapter(nn.Module):
         return decode_ascii(self._bank_fingerprint)
 
     @property
+    def pair_feature_fingerprint(self):
+        return decode_ascii(self._pair_feature_fingerprint)
+
+    @property
     def needs_patch_tokens(self):
         return True
 
@@ -294,10 +451,11 @@ class ConfusionAwareAdapter(nn.Module):
             "selected_prior": self.soft_prior.to(first.device)[first, second],
             "selected_score": scores.gather(1, second.unsqueeze(1)).squeeze(1),
         }
-        text_i = text_features[first]
-        text_j = text_features[second]
-        semantic_input = torch.cat((text_i - text_j, text_i * text_j), dim=-1)
+        semantic_input = self.pair_description_bank[first, second].to(
+            dtype=global_features.dtype
+        )
         semantic = self.semantic_projector(semantic_input)
+        details["llm_pair_feature_norm"] = semantic_input.float().norm(dim=-1)
         details["semantic_norm"] = semantic.float().norm(dim=-1)
 
         gate = self.global_gate(torch.cat((global_features, semantic), dim=-1))

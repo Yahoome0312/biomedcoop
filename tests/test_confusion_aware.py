@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -5,6 +6,7 @@ import torch
 
 from models.confusion_aware import (
     ConfusionAwareAdapter,
+    build_frozen_pair_description_bank,
     compute_hard_confusion_counts,
     compute_soft_confusion_prior,
     confusion_margin_loss,
@@ -12,6 +14,24 @@ from models.confusion_aware import (
     select_confusion_pairs,
     support_fingerprint,
 )
+
+
+class _PairTextEncoder(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.anchor = torch.nn.Parameter(torch.zeros(()))
+
+    def encode_text(self, tokens, normalize=True):
+        tokens = tokens.float()
+        features = torch.stack(
+            (tokens[:, 0], tokens[:, 1], tokens.sum(dim=1), tokens[:, 0] - tokens[:, 1]),
+            dim=1,
+        )
+        return torch.nn.functional.normalize(features, dim=-1) if normalize else features
+
+
+def _pair_tokenizer(text):
+    return torch.tensor([[len(text), sum(text.encode("utf-8")) % 97]], dtype=torch.long)
 
 
 def test_soft_prior_uses_every_support_probability_without_renormalizing():
@@ -40,6 +60,48 @@ def test_hard_count_is_diagnostic_only():
     assert prior[0, 1].item() == pytest.approx(0.375)
 
 
+def test_llm_pair_bank_supports_dynamic_classes_and_description_counts(tmp_path):
+    classnames = ["class c", "class_a", "class b"]
+    payload = {
+        "class a": {
+            "class b": ["a to b one", "a to b two"],
+            "class c": ["a to c"],
+        },
+        "class b": {
+            "class a": ["b to a"],
+            "class c": ["b to c"],
+        },
+        "class c": {
+            "class a": ["c to a"],
+            "class b": ["c to b"],
+        },
+    }
+    path = tmp_path / "dataset.txt"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    bank, metadata = build_frozen_pair_description_bank(
+        _PairTextEncoder(), _pair_tokenizer, classnames, path, batch_size=2
+    )
+
+    assert bank.shape == (3, 3, 4)
+    assert torch.equal(bank.diagonal(dim1=0, dim2=1), torch.zeros(4, 3))
+    assert metadata["pair_count"] == 6
+    assert metadata["description_count"] == 7
+    assert len(metadata["description_fingerprint"]) == 64
+    assert len(metadata["feature_fingerprint"]) == 64
+
+
+def test_llm_pair_bank_rejects_incomplete_pairs(tmp_path):
+    path = tmp_path / "dataset.txt"
+    path.write_text(
+        json.dumps({"a": {"b": ["a to b"]}, "b": {}}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="do not match the other dataset classes"):
+        build_frozen_pair_description_bank(
+            _PairTextEncoder(), _pair_tokenizer, ["a", "b"], path
+        )
+
+
 def test_pair_selection_uses_explicit_anchor_and_detaches_probabilities():
     logits = torch.tensor([[1.0, 3.0, 2.0]], requires_grad=True)
     first = torch.tensor([0])
@@ -65,7 +127,10 @@ def test_full_confusion_uses_ground_truth_anchor_and_backpropagates():
     torch.manual_seed(1)
     prior = torch.zeros(3, 3)
     prior[0, 1] = 0.325
-    adapter = ConfusionAwareAdapter(prior, "a" * 64)
+    pair_bank = torch.randn(3, 3, 512)
+    adapter = ConfusionAwareAdapter(
+        prior, "a" * 64, pair_bank, "b" * 64
+    )
     global_features = torch.randn(2, 512, requires_grad=True)
     patches = torch.randn(2, 196, 768, requires_grad=True)
     text = torch.randn(3, 512, requires_grad=True)

@@ -1,0 +1,184 @@
+{
+"actinic keratosis": {
+"basal cell carcinoma": [
+"Compared with actinic keratosis, basal cell carcinoma differs in having a more pearly or translucent surface with smoother raised borders.",
+"Compared with actinic keratosis, basal cell carcinoma differs in showing more prominent branching vessels and shiny white structures."
+],
+"benign keratosis": [
+"Compared with actinic keratosis, benign keratosis differs in having a more waxy, stuck-on appearance with sharply outlined edges.",
+"Compared with actinic keratosis, benign keratosis differs in showing milia-like cysts, comedo-like openings, and thicker keratin texture."
+],
+"dermatofibroma": [
+"Compared with actinic keratosis, dermatofibroma differs in appearing firmer and more dome-shaped with a central pale or scar-like area.",
+"Compared with actinic keratosis, dermatofibroma differs in having a more symmetrical brown peripheral network around a lighter center."
+],
+"melanoma": [
+"Compared with actinic keratosis, melanoma differs in showing stronger asymmetry with irregular borders and multiple uneven colors.",
+"Compared with actinic keratosis, melanoma differs in having atypical pigment network, blotches, streaks, or blue-white areas."
+],
+"melanocytic nevus": [
+"Compared with actinic keratosis, melanocytic nevus differs in being more evenly pigmented with a smoother, more regular outline.",
+"Compared with actinic keratosis, melanocytic nevus differs in showing a more organized pigment network, globules, or homogeneous brown pattern."
+],
+"vascular lesion": [
+"Compared with actinic keratosis, vascular lesion differs in showing red, purple, or blue coloration rather than rough pink-white scale.",
+"Compared with actinic keratosis, vascular lesion differs in having lacunae, dotted vessels, or blood-filled spaces as dominant structures."
+]
+},
+"basal cell carcinoma": {
+"actinic keratosis": [
+"Compared with basal cell carcinoma, actinic keratosis differs in having a rougher, scaly surface without a pearly translucent rim.",
+"Compared with basal cell carcinoma, actinic keratosis differs in showing more diffuse pink-red erythema and white-yellow scale."
+],
+"benign keratosis": [
+"Compared with basal cell carcinoma, benign keratosis differs in appearing more waxy or verrucous with a stuck-on border.",
+"Compared with basal cell carcinoma, benign keratosis differs in showing milia-like cysts and comedo-like openings rather than arborizing vessels."
+],
+"dermatofibroma": [
+"Compared with basal cell carcinoma, dermatofibroma differs in having a more matte, firm-looking surface with a central white scar-like area.",
+"Compared with basal cell carcinoma, dermatofibroma differs in showing a symmetric peripheral brown network instead of translucent pearly borders."
+],
+"melanoma": [
+"Compared with basal cell carcinoma, melanoma differs in showing more irregular pigmentation with multiple colors and asymmetric structure.",
+"Compared with basal cell carcinoma, melanoma differs in having atypical network, streaks, blotches, or blue-white veil rather than pearly translucency."
+],
+"melanocytic nevus": [
+"Compared with basal cell carcinoma, melanocytic nevus differs in having more uniform brown pigmentation and a more regular outline.",
+"Compared with basal cell carcinoma, melanocytic nevus differs in showing organized globules or pigment network rather than arborizing vessels."
+],
+"vascular lesion": [
+"Compared with basal cell carcinoma, vascular lesion differs in being dominated by red, purple, or blue vascular coloration.",
+"Compared with basal cell carcinoma, vascular lesion differs in showing lacunae or clustered vascular spaces rather than pearly raised margins."
+]
+},
+"benign keratosis": {
+"actinic keratosis": [
+"Compared with benign keratosis, actinic keratosis differs in having a flatter, rougher pink-white scaly surface.",
+"Compared with benign keratosis, actinic keratosis differs in lacking the waxy stuck-on appearance and comedo-like openings."
+],
+"basal cell carcinoma": [
+"Compared with benign keratosis, basal cell carcinoma differs in having a smoother pearly or translucent surface with raised rolled edges.",
+"Compared with benign keratosis, basal cell carcinoma differs in showing arborizing vessels and shiny white structures rather than keratin plugs."
+],
+"dermatofibroma": [
+"Compared with benign keratosis, dermatofibroma differs in appearing more firm and dome-like with a central pale scar-like patch.",
+"Compared with benign keratosis, dermatofibroma differs in showing a more symmetric peripheral pigment network rather than waxy keratin texture."
+],
+"melanoma": [
+"Compared with benign keratosis, melanoma differs in having more asymmetry, less uniform borders, and more varied pigmentation.",
+"Compared with benign keratosis, melanoma differs in showing atypical network, irregular streaks, blotches, or blue-white areas."
+],
+"melanocytic nevus": [
+"Compared with benign keratosis, melanocytic nevus differs in having a smoother surface and more regular melanocytic pigment pattern.",
+"Compared with benign keratosis, melanocytic nevus differs in showing organized globules or network rather than milia-like cysts."
+],
+"vascular lesion": [
+"Compared with benign keratosis, vascular lesion differs in showing red-purple-blue vascular color instead of tan-brown waxy keratin.",
+"Compared with benign keratosis, vascular lesion differs in having lacunae or blood-filled spaces rather than comedo-like openings."
+]
+},
+"dermatofibroma": {
+"actinic keratosis": [
+"Compared with dermatofibroma, actinic keratosis differs in having a rough scaly surface rather than a firm-looking central pale area.",
+"Compared with dermatofibroma, actinic keratosis differs in showing more irregular white-yellow scale and less symmetric peripheral pigmentation."
+],
+"basal cell carcinoma": [
+"Compared with dermatofibroma, basal cell carcinoma differs in having a pearly translucent surface with smoother rolled borders.",
+"Compared with dermatofibroma, basal cell carcinoma differs in showing arborizing vessels and shiny white structures rather than central scar-like pallor."
+],
+"benign keratosis": [
+"Compared with dermatofibroma, benign keratosis differs in having a waxy stuck-on surface with sharper keratotic edges.",
+"Compared with dermatofibroma, benign keratosis differs in showing milia-like cysts and comedo-like openings instead of a central white patch."
+],
+"melanoma": [
+"Compared with dermatofibroma, melanoma differs in having greater asymmetry, irregular borders, and uneven color distribution.",
+"Compared with dermatofibroma, melanoma differs in showing atypical network, blotches, streaks, or blue-white areas rather than a symmetric scar-like center."
+],
+"melanocytic nevus": [
+"Compared with dermatofibroma, melanocytic nevus differs in having more uniform brown pigmentation without a prominent central white scar-like zone.",
+"Compared with dermatofibroma, melanocytic nevus differs in showing organized globules or pigment network across the lesion."
+],
+"vascular lesion": [
+"Compared with dermatofibroma, vascular lesion differs in showing dominant red, purple, or blue coloration rather than brown peripheral pigmentation.",
+"Compared with dermatofibroma, vascular lesion differs in having vascular lacunae or clustered blood-filled spaces instead of central pallor."
+]
+},
+"melanoma": {
+"actinic keratosis": [
+"Compared with melanoma, actinic keratosis differs in having rough pink-white scale with less multicolor pigmentation.",
+"Compared with melanoma, actinic keratosis differs in showing fewer irregular pigment structures such as streaks, blotches, or atypical network."
+],
+"basal cell carcinoma": [
+"Compared with melanoma, basal cell carcinoma differs in having pearly translucency, rolled borders, and more uniform shiny areas.",
+"Compared with melanoma, basal cell carcinoma differs in showing arborizing vessels rather than highly irregular pigment network and streaks."
+],
+"benign keratosis": [
+"Compared with melanoma, benign keratosis differs in appearing more waxy and stuck-on with more sharply demarcated keratotic edges.",
+"Compared with melanoma, benign keratosis differs in showing milia-like cysts and comedo-like openings rather than chaotic pigment structures."
+],
+"dermatofibroma": [
+"Compared with melanoma, dermatofibroma differs in being more symmetric with a central white scar-like area and peripheral brown network.",
+"Compared with melanoma, dermatofibroma differs in having less color variation and fewer irregular streaks, blotches, or blue-white areas."
+],
+"melanocytic nevus": [
+"Compared with melanoma, melanocytic nevus differs in being more symmetric with smoother borders and more even pigmentation.",
+"Compared with melanoma, melanocytic nevus differs in showing organized globules or regular network rather than chaotic atypical structures."
+],
+"vascular lesion": [
+"Compared with melanoma, vascular lesion differs in having dominant red-purple-blue vascular coloration rather than mixed brown-black pigmentation.",
+"Compared with melanoma, vascular lesion differs in showing lacunae or vascular spaces instead of atypical pigment network, streaks, or blotches."
+]
+},
+"melanocytic nevus": {
+"actinic keratosis": [
+"Compared with melanocytic nevus, actinic keratosis differs in having a rough scaly surface and more pink-white coloration.",
+"Compared with melanocytic nevus, actinic keratosis differs in lacking an organized brown pigment network or regular globular pattern."
+],
+"basal cell carcinoma": [
+"Compared with melanocytic nevus, basal cell carcinoma differs in having pearly translucency, shiny white areas, and rolled borders.",
+"Compared with melanocytic nevus, basal cell carcinoma differs in showing arborizing vessels rather than regular globules or uniform pigment network."
+],
+"benign keratosis": [
+"Compared with melanocytic nevus, benign keratosis differs in having a waxy, stuck-on, or verrucous surface texture.",
+"Compared with melanocytic nevus, benign keratosis differs in showing milia-like cysts and comedo-like openings rather than organized melanocytic pattern."
+],
+"dermatofibroma": [
+"Compared with melanocytic nevus, dermatofibroma differs in having a central pale scar-like area with peripheral brown pigmentation.",
+"Compared with melanocytic nevus, dermatofibroma differs in appearing firmer and more dome-shaped with less uniform pigment distribution."
+],
+"melanoma": [
+"Compared with melanocytic nevus, melanoma differs in having greater asymmetry, border irregularity, and more uneven color variation.",
+"Compared with melanocytic nevus, melanoma differs in showing atypical network, irregular streaks, blotches, or blue-white areas."
+],
+"vascular lesion": [
+"Compared with melanocytic nevus, vascular lesion differs in showing red, purple, or blue vascular coloration rather than brown melanocytic pigmentation.",
+"Compared with melanocytic nevus, vascular lesion differs in having lacunae or clustered vascular spaces rather than regular network or globules."
+]
+},
+"vascular lesion": {
+"actinic keratosis": [
+"Compared with vascular lesion, actinic keratosis differs in having rough pink-white scale rather than red-purple-blue vascular spaces.",
+"Compared with vascular lesion, actinic keratosis differs in showing surface keratin and erythema without dominant lacunae."
+],
+"basal cell carcinoma": [
+"Compared with vascular lesion, basal cell carcinoma differs in having pearly translucency, rolled borders, and shiny white structures.",
+"Compared with vascular lesion, basal cell carcinoma differs in showing arborizing vessels rather than compact red-purple-blue lacunae."
+],
+"benign keratosis": [
+"Compared with vascular lesion, benign keratosis differs in having tan-brown waxy keratin texture and a stuck-on outline.",
+"Compared with vascular lesion, benign keratosis differs in showing milia-like cysts and comedo-like openings rather than blood-filled spaces."
+],
+"dermatofibroma": [
+"Compared with vascular lesion, dermatofibroma differs in having brown peripheral pigmentation with a central pale scar-like area.",
+"Compared with vascular lesion, dermatofibroma differs in appearing more firm and symmetric without dominant lacunae."
+],
+"melanoma": [
+"Compared with vascular lesion, melanoma differs in having more irregular brown-black pigmentation with asymmetric structure.",
+"Compared with vascular lesion, melanoma differs in showing atypical network, streaks, blotches, or blue-white areas rather than vascular lacunae."
+],
+"melanocytic nevus": [
+"Compared with vascular lesion, melanocytic nevus differs in having more uniform brown pigmentation and smoother lesion symmetry.",
+"Compared with vascular lesion, melanocytic nevus differs in showing organized globules or pigment network rather than clustered vascular spaces."
+]
+}
+}

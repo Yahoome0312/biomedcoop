@@ -29,6 +29,7 @@ from models.biomedclip_loader import load_biomedclip
 from models.confusion_aware import (
     ConfusionAwareAdapter,
     bank_file,
+    build_frozen_pair_description_bank,
     confusion_margin_loss,
     load_soft_confusion_bank,
 )
@@ -43,7 +44,8 @@ from trainers.prompt_templates import BIOMEDCOOP_TEMPLATES
 
 
 DESCRIPTION_COUNT = 50
-PROTOCOL = "full_confusion_gt_anchor_margin_v1"
+PAIR_DESCRIPTION_ROOT = Path(__file__).resolve().parents[2] / "confuse_pair"
+PROTOCOL = "full_confusion_llm_pair_gt_anchor_margin_v1"
 
 
 def _json_write(path, value):
@@ -207,9 +209,23 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             classnames=classnames,
             support_items=self.dm.dataset.train_x,
         )
+        pair_description_file = PAIR_DESCRIPTION_ROOT / "{}.txt".format(
+            str(cfg.DATASET.NAME).casefold()
+        )
+        pair_description_bank, self.pair_description_metadata = (
+            build_frozen_pair_description_bank(
+                biomedclip_model,
+                self.model.prompt_learner.tokenizer,
+                classnames,
+                pair_description_file,
+                batch_size=int(cfg.DATALOADER.TEST.BATCH_SIZE),
+            )
+        )
         confusion_adapter = ConfusionAwareAdapter(
             soft_prior,
             self.bank_metadata["bank_fingerprint"],
+            pair_description_bank,
+            self.pair_description_metadata["feature_fingerprint"],
             prior_alpha=confusion_cfg.PRIOR_ALPHA,
             gamma=confusion_cfg.GAMMA,
         )
@@ -253,6 +269,16 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 "core_initialization_fingerprint": base_fingerprint,
                 "core_parameters": base_entries,
                 "bank_fingerprint": self.bank_metadata["bank_fingerprint"],
+                "pair_description_fingerprint": self.pair_description_metadata[
+                    "description_fingerprint"
+                ],
+                "pair_feature_fingerprint": self.pair_description_metadata[
+                    "feature_fingerprint"
+                ],
+                "pair_description_file": self.pair_description_metadata["source_file"],
+                "pair_description_count": self.pair_description_metadata[
+                    "description_count"
+                ],
                 "parameter_counts": self._parameter_count_manifest(),
             },
         )
@@ -534,6 +560,9 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
             "tcp_enabled": self.tcp_enabled,
             "bank_fingerprint": self.bank_metadata["bank_fingerprint"],
+            "pair_feature_fingerprint": self.pair_description_metadata[
+                "feature_fingerprint"
+            ],
             "protocol": PROTOCOL,
         }
         save_checkpoint(
@@ -568,6 +597,13 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         expected_bank = self.bank_metadata["bank_fingerprint"]
         if checkpoint.get("bank_fingerprint") != expected_bank:
             raise RuntimeError("Checkpoint Bank fingerprint does not match current run")
+        expected_pair_features = self.pair_description_metadata[
+            "feature_fingerprint"
+        ]
+        if checkpoint.get("pair_feature_fingerprint") != expected_pair_features:
+            raise RuntimeError(
+                "Checkpoint LLM pair features do not match current run"
+            )
         validate_tcp_checkpoint_state(
             checkpoint["state_dict"],
             self._unwrapped_model().text_encoder.tcp_prompt,
