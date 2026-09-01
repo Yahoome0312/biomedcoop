@@ -2,8 +2,8 @@
 
 中文方法说明和命令行用法见 [README_CN.md](README_CN.md)。
 
-The DermaMNIST CoOp/VPT path includes a from-scratch MT-TCP baseline and an
-optional support-only soft confusion-aware semantic/global/local extension.
+The DermaMNIST CoOp/VPT path uses from-scratch MT-TCP with a fixed full
+support-only soft confusion-aware semantic/global/local branch.
 See [README_CN.md](README_CN.md) for the method description and commands.
 **[Health-X Lab](http://www.healthx-lab.ca/)** | **[IMPACT Lab](https://users.encs.concordia.ca/~impact/)** 
 

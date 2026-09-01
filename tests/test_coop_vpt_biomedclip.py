@@ -94,25 +94,27 @@ def test_coop_and_visual_prompt_use_one_adamw_group():
     assert optimizer.param_groups[0]["lr"] == 2e-3
 
 
-def _tcp_ablation_cfg(enabled, variant="b0"):
+def _tcp_ablation_cfg(enabled):
     cfg = get_cfg_default()
     extend_cfg(cfg)
     cfg.OPTIM.NAME = "adamw"
     cfg.TRAINER.TCP.ENABLED = enabled
-    cfg.TRAINER.CONFUSION_AWARE.VARIANT = variant
+    cfg.TRAINER.CONFUSION_AWARE.BANK_ROOT = "bank"
     return cfg
 
 
-def test_tcp_ablation_accepts_on_and_off_for_b0():
+def test_full_confusion_accepts_tcp_on_and_off():
     trainer = object.__new__(CoOpVPT_BiomedCLIP)
     trainer.check_cfg(_tcp_ablation_cfg(True))
     trainer.check_cfg(_tcp_ablation_cfg(False))
 
 
-def test_tcp_off_rejects_confusion_variant():
+def test_full_confusion_requires_bank_root():
     trainer = object.__new__(CoOpVPT_BiomedCLIP)
-    with pytest.raises(ValueError, match="only supports the b0 variant"):
-        trainer.check_cfg(_tcp_ablation_cfg(False, variant="full"))
+    cfg = _tcp_ablation_cfg(False)
+    cfg.TRAINER.CONFUSION_AWARE.BANK_ROOT = ""
+    with pytest.raises(ValueError, match="requires CONFUSION_AWARE.BANK_ROOT"):
+        trainer.check_cfg(cfg)
 
 
 @pytest.mark.skipif(

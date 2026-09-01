@@ -52,8 +52,7 @@ TRAINER:
     INSERT_LAYER: 8
     GATE_INIT: 0.05
   CONFUSION_AWARE:
-    VARIANT: "b0"
-    BANK_ROOT: ""
+    BANK_ROOT: "output/soft_confusion_banks"
     PRIOR_ALPHA: 1.0
     GAMMA: 0.2
     LAMBDA_CONF: 1.0

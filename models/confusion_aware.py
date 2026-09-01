@@ -1,4 +1,4 @@
-"""Confusion-aware components for the from-scratch MT-TCP experiments.
+"""Fixed full confusion-aware components for the prompt-training mainline.
 
 The bank is a fixed class-conditional probability prior built from every
 K-shot support image.  It never retrieves images and it never participates in
@@ -16,15 +16,6 @@ from torch import nn
 from torch.nn import functional as F
 
 
-CONFUSION_VARIANTS = (
-    "b0",
-    "pair",
-    "semantic",
-    "semantic_global",
-    "semantic_local",
-    "global_local",
-    "full",
-)
 PRIOR_TYPE = "soft_probability_mean"
 
 
@@ -181,20 +172,24 @@ def load_soft_confusion_bank(
     return prior, metadata
 
 
-def select_confusion_pairs(logits, soft_prior, prior_alpha=1.0):
-    """Select directed top-1/competitor pairs from detached predictions."""
+def select_confusion_pairs(logits, soft_prior, first, prior_alpha=1.0):
+    """Select the hardest negative for each explicit class anchor."""
 
     if logits.dim() != 2:
         raise ValueError("Classification logits must be rank 2")
     classes = logits.shape[1]
     if tuple(soft_prior.shape) != (classes, classes):
         raise ValueError("Soft prior and logits disagree")
+    first = torch.as_tensor(first, dtype=torch.long, device=logits.device)
+    if first.dim() != 1 or first.shape[0] != logits.shape[0]:
+        raise ValueError("Pair anchors and logits disagree")
+    if first.numel() and (first.min() < 0 or first.max() >= classes):
+        raise ValueError("Pair anchor is outside the class range")
     alpha = float(prior_alpha)
     if alpha < 0:
         raise ValueError("prior_alpha must be non-negative")
 
     probabilities = logits.detach().float().softmax(dim=-1)
-    first = probabilities.argmax(dim=-1)
     row_prior = soft_prior.detach().to(probabilities.device)[first]
     scores = probabilities * (1.0 + alpha * row_prior)
     scores = scores.scatter(1, first.unsqueeze(1), float("-inf"))
@@ -202,21 +197,23 @@ def select_confusion_pairs(logits, soft_prior, prior_alpha=1.0):
     return first, second, probabilities, scores
 
 
-def confusion_margin_loss(logits, labels, first, second):
+def confusion_margin_loss(logits, labels, competitor):
     labels = labels.long()
-    competitor = torch.where(labels.eq(first), second, first)
-    competitor = torch.where(labels.eq(second), first, competitor)
+    competitor = competitor.long()
+    if labels.shape != competitor.shape or labels.shape[0] != logits.shape[0]:
+        raise ValueError("Labels, competitors and logits disagree")
+    if labels.eq(competitor).any():
+        raise ValueError("Margin competitor must differ from the true label")
     row = torch.arange(logits.shape[0], device=logits.device)
     loss = F.softplus(logits[row, competitor] - logits[row, labels]).mean()
-    return loss, competitor
+    return loss
 
 
 class ConfusionAwareAdapter(nn.Module):
-    """Semantic/global/local confusion branch with no second classifier."""
+    """Fixed full semantic/global/local branch with no second classifier."""
 
     def __init__(
         self,
-        variant,
         soft_prior,
         bank_fingerprint,
         prior_alpha=1.0,
@@ -225,9 +222,6 @@ class ConfusionAwareAdapter(nn.Module):
         patch_dim=768,
     ):
         super().__init__()
-        if variant not in CONFUSION_VARIANTS or variant == "b0":
-            raise ValueError("Adapter variant must be a non-b0 confusion variant")
-        self.variant = str(variant)
         self.prior_alpha = float(prior_alpha)
         self.gamma = float(gamma)
         if self.gamma < 0:
@@ -239,55 +233,39 @@ class ConfusionAwareAdapter(nn.Module):
             "_bank_fingerprint", _encode_ascii(str(bank_fingerprint))
         )
 
-        self.uses_semantic = variant not in {"pair"}
-        self.uses_global = variant in {"semantic_global", "global_local", "full"}
-        self.uses_local = variant in {"semantic_local", "global_local", "full"}
-        self.uses_final_fusion = variant in {
-            "semantic_global",
-            "semantic_local",
-            "global_local",
-            "full",
-        }
-        self.uses_adaptive_gate = variant == "full"
-
-        if self.uses_semantic:
-            self.semantic_projector = nn.Sequential(
-                nn.LayerNorm(2 * feature_dim),
-                nn.Linear(2 * feature_dim, feature_dim),
-                nn.GELU(),
-                nn.Linear(feature_dim, feature_dim),
-                nn.LayerNorm(feature_dim),
-            )
-        if self.uses_global:
-            self.global_gate = nn.Sequential(
-                nn.LayerNorm(2 * feature_dim),
-                nn.Linear(2 * feature_dim, feature_dim),
-                nn.GELU(),
-                nn.Linear(feature_dim, feature_dim),
-                nn.Sigmoid(),
-            )
-            self.global_norm = nn.LayerNorm(feature_dim)
-        if self.uses_local:
-            self.query_projection = nn.Linear(feature_dim, patch_dim)
-            self.patch_projection = nn.Linear(patch_dim, feature_dim)
-            nn.init.xavier_uniform_(self.query_projection.weight)
-            nn.init.zeros_(self.query_projection.bias)
-            nn.init.normal_(self.patch_projection.weight, std=1e-3)
-            nn.init.zeros_(self.patch_projection.bias)
-        if self.uses_adaptive_gate:
-            self.global_local_gate = nn.Sequential(
-                nn.LayerNorm(2 * feature_dim),
-                nn.Linear(2 * feature_dim, 256),
-                nn.GELU(),
-                nn.Linear(256, 2),
-            )
-        if self.uses_final_fusion:
-            self.final_fusion = nn.Sequential(
-                nn.LayerNorm(2 * feature_dim),
-                nn.Linear(2 * feature_dim, feature_dim),
-                nn.GELU(),
-                nn.Linear(feature_dim, feature_dim),
-            )
+        self.semantic_projector = nn.Sequential(
+            nn.LayerNorm(2 * feature_dim),
+            nn.Linear(2 * feature_dim, feature_dim),
+            nn.GELU(),
+            nn.Linear(feature_dim, feature_dim),
+            nn.LayerNorm(feature_dim),
+        )
+        self.global_gate = nn.Sequential(
+            nn.LayerNorm(2 * feature_dim),
+            nn.Linear(2 * feature_dim, feature_dim),
+            nn.GELU(),
+            nn.Linear(feature_dim, feature_dim),
+            nn.Sigmoid(),
+        )
+        self.global_norm = nn.LayerNorm(feature_dim)
+        self.query_projection = nn.Linear(feature_dim, patch_dim)
+        self.patch_projection = nn.Linear(patch_dim, feature_dim)
+        nn.init.xavier_uniform_(self.query_projection.weight)
+        nn.init.zeros_(self.query_projection.bias)
+        nn.init.normal_(self.patch_projection.weight, std=1e-3)
+        nn.init.zeros_(self.patch_projection.bias)
+        self.global_local_gate = nn.Sequential(
+            nn.LayerNorm(2 * feature_dim),
+            nn.Linear(2 * feature_dim, 256),
+            nn.GELU(),
+            nn.Linear(256, 2),
+        )
+        self.final_fusion = nn.Sequential(
+            nn.LayerNorm(2 * feature_dim),
+            nn.Linear(2 * feature_dim, feature_dim),
+            nn.GELU(),
+            nn.Linear(feature_dim, feature_dim),
+        )
 
     @property
     def bank_fingerprint(self):
@@ -295,11 +273,19 @@ class ConfusionAwareAdapter(nn.Module):
 
     @property
     def needs_patch_tokens(self):
-        return self.uses_local
+        return True
 
-    def forward(self, global_features, patch_tokens, text_features, base_logits, logit_scale):
+    def forward(
+        self,
+        global_features,
+        patch_tokens,
+        text_features,
+        base_logits,
+        logit_scale,
+        first,
+    ):
         first, second, probabilities, scores = select_confusion_pairs(
-            base_logits, self.soft_prior, self.prior_alpha
+            base_logits, self.soft_prior, first, self.prior_alpha
         )
         details = {
             "pair_first": first,
@@ -308,67 +294,39 @@ class ConfusionAwareAdapter(nn.Module):
             "selected_prior": self.soft_prior.to(first.device)[first, second],
             "selected_score": scores.gather(1, second.unsqueeze(1)).squeeze(1),
         }
-        if self.variant == "pair":
-            return base_logits, details
-
         text_i = text_features[first]
         text_j = text_features[second]
         semantic_input = torch.cat((text_i - text_j, text_i * text_j), dim=-1)
         semantic = self.semantic_projector(semantic_input)
         details["semantic_norm"] = semantic.float().norm(dim=-1)
 
-        if self.variant == "semantic":
-            confusion = semantic
-        else:
-            global_confusion = None
-            local_confusion = None
-            if self.uses_global:
-                gate = self.global_gate(torch.cat((global_features, semantic), dim=-1))
-                global_confusion = self.global_norm(gate * global_features)
-            if self.uses_local:
-                if patch_tokens is None:
-                    raise RuntimeError("Local confusion branch requires patch tokens")
-                query = self.query_projection(semantic)
-                attention = torch.softmax(
-                    torch.einsum("bd,bnd->bn", query, patch_tokens)
-                    / (self.patch_dim ** 0.5),
-                    dim=-1,
-                )
-                local_value = torch.einsum("bn,bnd->bd", attention, patch_tokens)
-                local_confusion = self.patch_projection(local_value)
-                details["local_attention_max"] = attention.max(dim=-1).values
+        gate = self.global_gate(torch.cat((global_features, semantic), dim=-1))
+        global_confusion = self.global_norm(gate * global_features)
+        if patch_tokens is None:
+            raise RuntimeError("Full confusion branch requires patch tokens")
+        query = self.query_projection(semantic)
+        attention = torch.softmax(
+            torch.einsum("bd,bnd->bn", query, patch_tokens)
+            / (self.patch_dim ** 0.5),
+            dim=-1,
+        )
+        local_value = torch.einsum("bn,bnd->bd", attention, patch_tokens)
+        local_confusion = self.patch_projection(local_value)
+        details["local_attention_max"] = attention.max(dim=-1).values
 
-            if self.variant == "semantic_global":
-                visual_confusion = global_confusion
-                weights = global_features.new_tensor([1.0, 0.0]).expand(
-                    global_features.shape[0], -1
-                )
-            elif self.variant == "semantic_local":
-                visual_confusion = local_confusion
-                weights = global_features.new_tensor([0.0, 1.0]).expand(
-                    global_features.shape[0], -1
-                )
-            elif self.variant == "global_local":
-                visual_confusion = 0.5 * global_confusion + 0.5 * local_confusion
-                weights = global_features.new_tensor([0.5, 0.5]).expand(
-                    global_features.shape[0], -1
-                )
-            else:
-                weights = torch.softmax(
-                    self.global_local_gate(
-                        torch.cat((global_features, semantic), dim=-1)
-                    ),
-                    dim=-1,
-                )
-                visual_confusion = (
-                    weights[:, :1] * global_confusion
-                    + weights[:, 1:] * local_confusion
-                )
-            details["alpha_global"] = weights[:, 0]
-            details["alpha_local"] = weights[:, 1]
-            confusion = self.final_fusion(
-                torch.cat((semantic, visual_confusion), dim=-1)
-            )
+        weights = torch.softmax(
+            self.global_local_gate(torch.cat((global_features, semantic), dim=-1)),
+            dim=-1,
+        )
+        visual_confusion = (
+            weights[:, :1] * global_confusion
+            + weights[:, 1:] * local_confusion
+        )
+        details["alpha_global"] = weights[:, 0]
+        details["alpha_local"] = weights[:, 1]
+        confusion = self.final_fusion(
+            torch.cat((semantic, visual_confusion), dim=-1)
+        )
 
         final_features = F.normalize(
             F.normalize(global_features, dim=-1)

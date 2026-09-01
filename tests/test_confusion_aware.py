@@ -40,57 +40,55 @@ def test_hard_count_is_diagnostic_only():
     assert prior[0, 1].item() == pytest.approx(0.375)
 
 
-def test_zero_prior_falls_back_to_top1_top2_and_detaches_selection():
+def test_pair_selection_uses_explicit_anchor_and_detaches_probabilities():
     logits = torch.tensor([[1.0, 3.0, 2.0]], requires_grad=True)
+    first = torch.tensor([0])
     first, second, probabilities, _ = select_confusion_pairs(
-        logits, torch.zeros(3, 3), prior_alpha=1.0
+        logits, torch.zeros(3, 3), first, prior_alpha=1.0
     )
-    assert first.tolist() == [1]
-    assert second.tolist() == [2]
+    assert first.tolist() == [0]
+    assert second.tolist() == [1]
     assert not probabilities.requires_grad
 
 
-def test_confusion_margin_competitor_rules():
+def test_confusion_margin_compares_true_class_with_selected_negative():
     logits = torch.zeros(3, 4, requires_grad=True)
     labels = torch.tensor([1, 2, 3])
-    first = torch.tensor([1, 1, 1])
-    second = torch.tensor([2, 2, 2])
-    loss, competitor = confusion_margin_loss(logits, labels, first, second)
-    assert competitor.tolist() == [2, 1, 1]
+    competitor = torch.tensor([2, 1, 1])
+    loss = confusion_margin_loss(logits, labels, competitor)
     assert loss.item() == pytest.approx(torch.log(torch.tensor(2.0)).item())
     loss.backward()
     assert logits.grad is not None
 
 
-@pytest.mark.parametrize(
-    "variant",
-    ["pair", "semantic", "semantic_global", "semantic_local", "global_local", "full"],
-)
-def test_all_confusion_variants_forward_backward(variant):
+def test_full_confusion_uses_ground_truth_anchor_and_backpropagates():
     torch.manual_seed(1)
     prior = torch.zeros(3, 3)
     prior[0, 1] = 0.325
-    adapter = ConfusionAwareAdapter(variant, prior, "a" * 64)
+    adapter = ConfusionAwareAdapter(prior, "a" * 64)
     global_features = torch.randn(2, 512, requires_grad=True)
     patches = torch.randn(2, 196, 768, requires_grad=True)
     text = torch.randn(3, 512, requires_grad=True)
-    base_logits = torch.randn(2, 3, requires_grad=True)
+    base_logits = torch.tensor(
+        [[0.1, 3.0, 0.2], [2.0, 0.3, 0.1]], requires_grad=True
+    )
+    labels = torch.tensor([0, 2])
     logits, details = adapter(
         global_features,
-        patches if adapter.needs_patch_tokens else None,
+        patches,
         text,
         base_logits,
         torch.tensor(10.0),
+        labels,
     )
     assert logits.shape == (2, 3)
     assert torch.isfinite(logits).all()
-    assert details["pair_first"].shape == (2,)
+    assert details["pair_first"].tolist() == labels.tolist()
+    assert details["pair_second"].ne(labels).all()
     logits.sum().backward()
-    if variant != "pair":
-        assert text.grad is not None
-        assert global_features.grad is not None
-    if adapter.needs_patch_tokens:
-        assert patches.grad is not None
+    assert text.grad is not None
+    assert global_features.grad is not None
+    assert patches.grad is not None
 
 
 def test_bank_loader_rejects_support_fingerprint_mismatch(tmp_path):

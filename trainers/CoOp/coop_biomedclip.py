@@ -171,6 +171,7 @@ class CustomCLIP(nn.Module):
         return_text_features=False,
         return_features=False,
         return_confusion_details=False,
+        confusion_anchor=None,
     ):
         needs_tokens = (
             self.confusion_adapter is not None
@@ -197,12 +198,18 @@ class CustomCLIP(nn.Module):
         if self.confusion_adapter is None:
             logits = base_logits
         else:
+            first = (
+                base_logits.detach().argmax(dim=-1)
+                if confusion_anchor is None
+                else confusion_anchor
+            )
             logits, details = self.confusion_adapter(
                 image_features,
                 patch_tokens,
                 text_features,
                 base_logits,
                 logit_scale,
+                first,
             )
 
         if return_features:
