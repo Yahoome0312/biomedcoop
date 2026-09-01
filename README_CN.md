@@ -10,32 +10,32 @@
 
 在仓库根目录执行：
 
-```powershell
+```bash
 pip install -r requirements.txt
-pip install -e .\Dassl.pytorch
+pip install -e ./Dassl.pytorch
 ```
 
 ## 单次训练
 
 先为 DermaMNIST 4-shot 的 seed 1、2、3 构建 Soft Bank：
 
-```powershell
-python scripts/coopvpt/build_confusion_prior.py `
-  --data-root D:\Data\dermamnist `
-  --output-root output\soft_confusion_banks `
+```bash
+python scripts/coopvpt/build_confusion_prior.py \
+  --data-root /mnt/nas1/disk09/yuejianwu/data \
+  --output-root output/soft_confusion_banks \
   --shots 4
 ```
 
 然后运行 DermaMNIST 4-shot、seed 1 的 Full Confusion + TCP：
 
-```powershell
-python train.py `
-  --root D:\Data\dermamnist `
-  --output-dir output\full_confusion\tcp_on\shots_4\seed1 `
-  --seed 1 `
-  --trainer CoOpVPT_BiomedCLIP `
-  --dataset-config-file configs/datasets/dermamnist.yaml `
-  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml `
+```bash
+python train.py \
+  --root /mnt/nas1/disk09/yuejianwu/data \
+  --output-dir output/full_confusion/tcp_on/shots_4/seed1 \
+  --seed 1 \
+  --trainer CoOpVPT_BiomedCLIP \
+  --dataset-config-file configs/datasets/dermamnist.yaml \
+  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml \
   DATASET.NUM_SHOTS 4
 ```
 
@@ -47,21 +47,21 @@ TCP 默认开启，因此上面的命令就是 TCP-on 对照组。TCP-off 保留
 
 运行 TCP-off 时，在同一条训练命令末尾增加：
 
-```powershell
+```bash
 TRAINER.TCP.ENABLED False
 ```
 
 例如 DermaMNIST 4-shot、seed 1：
 
-```powershell
-python train.py `
-  --root D:\Data\dermamnist `
-  --output-dir output\tcp_ablation\without_tcp\shots_4\seed1 `
-  --seed 1 `
-  --trainer CoOpVPT_BiomedCLIP `
-  --dataset-config-file configs/datasets/dermamnist.yaml `
-  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml `
-  DATASET.NUM_SHOTS 4 `
+```bash
+python train.py \
+  --root /mnt/nas1/disk09/yuejianwu/data \
+  --output-dir output/tcp_ablation/without_tcp/shots_4/seed1 \
+  --seed 1 \
+  --trainer CoOpVPT_BiomedCLIP \
+  --dataset-config-file configs/datasets/dermamnist.yaml \
+  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml \
+  DATASET.NUM_SHOTS 4 \
   TRAINER.TCP.ENABLED False
 ```
 
@@ -71,7 +71,7 @@ TCP-on 与 TCP-off 必须使用不同输出目录；两者的 checkpoint 会记�
 
 Confusion Aware 默认开启。关闭时在训练命令末尾增加：
 
-```powershell
+```bash
 TRAINER.CONFUSION_AWARE.ENABLED False
 ```
 
@@ -91,33 +91,30 @@ TRAINER.CONFUSION_AWARE.ENABLED False
 
 ## 批量运行 shots 和 seeds
 
-旧的批量启动文件已删除。需要批量实验时，直接在 PowerShell 中循环调用 `train.py`：
+旧的批量启动文件已删除。需要批量实验时，直接在服务器 Bash 中循环调用 `train.py`：
 
-```powershell
-$dataRoot = 'D:\Data\dermamnist'
-$outputRoot = 'output\full_confusion\tcp_on'
-$trainer = 'CoOpVPT_BiomedCLIP'
-$trainerConfig = 'configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml'
-$shotsList = @(1, 2, 4, 8, 16, 32)
-$seedList = @(1, 2, 3)
+```bash
+DATA_ROOT=/mnt/nas1/disk09/yuejianwu/data
+OUTPUT_ROOT=output/full_confusion/tcp_on
+TRAINER=CoOpVPT_BiomedCLIP
+TRAINER_CONFIG=configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml
 
-foreach ($shots in $shotsList) {
-  foreach ($seed in $seedList) {
-    $outputDir = Join-Path $outputRoot "shots_$shots\seed$seed"
-    python train.py `
-      --root $dataRoot `
-      --output-dir $outputDir `
-      --seed $seed `
-      --trainer $trainer `
-      --dataset-config-file configs/datasets/dermamnist.yaml `
-      --config-file $trainerConfig `
-      DATASET.NUM_SHOTS $shots
-
-    if ($LASTEXITCODE -ne 0) {
-      throw "训练失败：shots=$shots, seed=$seed"
-    }
-  }
-}
+for SHOTS in 1 2 4 8 16 32; do
+  for SEED in 1 2 3; do
+    OUTPUT_DIR="${OUTPUT_ROOT}/shots_${SHOTS}/seed${SEED}"
+    if ! python train.py \
+      --root "$DATA_ROOT" \
+      --output-dir "$OUTPUT_DIR" \
+      --seed "$SEED" \
+      --trainer "$TRAINER" \
+      --dataset-config-file configs/datasets/dermamnist.yaml \
+      --config-file "$TRAINER_CONFIG" \
+      DATASET.NUM_SHOTS "$SHOTS"; then
+      echo "训练失败：shots=${SHOTS}, seed=${SEED}" >&2
+      exit 1
+    fi
+  done
+done
 ```
 
 其他现有方法也使用同一条命令，只需替换 Trainer 和配置文件：
@@ -132,10 +129,10 @@ foreach ($shots in $shotsList) {
 
 批量实验前，为全部 shots 和固定 seed 1、2、3 构建 Soft Bank：
 
-```powershell
-python scripts/coopvpt/build_confusion_prior.py `
-  --data-root D:\Data\dermamnist `
-  --output-root output\soft_confusion_banks `
+```bash
+python scripts/coopvpt/build_confusion_prior.py \
+  --data-root /mnt/nas1/disk09/yuejianwu/data \
+  --output-root output/soft_confusion_banks \
   --shots 1 2 4 8 16 32
 ```
 

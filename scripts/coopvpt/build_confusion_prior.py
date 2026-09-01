@@ -198,7 +198,7 @@ def build_one(args, shots, seed):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-root", type=Path, default=Path(r"D:\Data\dermamnist"))
+    parser.add_argument("--data-root",type=Path,default=Path("/mnt/nas1/disk09/yuejianwu/data"),)
     parser.add_argument(
         "--output-root", type=Path, default=REPO / "output" / "soft_confusion_banks"
     )
