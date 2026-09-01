@@ -186,6 +186,24 @@ def test_prompt_parameters_receive_gradients_but_backbone_does_not():
     )
 
 
+def test_tcp_off_trains_only_existing_text_vpt_tokens():
+    _, adapter, prompts, tokenized = _adapter()
+    for parameter in adapter.parameters():
+        parameter.requires_grad_(False)
+    for parameter in adapter.tcp_prompt.text_prompt.parameters():
+        parameter.requires_grad_(True)
+    adapter.tcp_prompt.set_residual_scale(0.0)
+
+    adapter(prompts, tokenized).square().sum().backward()
+
+    assert adapter.tcp_prompt.text_prompt.prompt_embeddings.grad is not None
+    assert all(
+        parameter.grad is None
+        for name, parameter in adapter.tcp_prompt.named_parameters()
+        if not name.startswith("text_prompt.")
+    )
+
+
 def test_checkpoint_validates_final_method_identity():
     _, adapter, _, _ = _adapter()
     state = {

@@ -1,11 +1,15 @@
 import os
 
 import torch
+import pytest
 from torch import nn
 from timm.models.vision_transformer import VisionTransformer
 
+from dassl.config import get_cfg_default
 from models.biomedclip_loader import load_biomedclip
 from models.vpt import TimmViTVisualPromptEncoder
+from train import extend_cfg
+from trainers.CoOp.coop_vpt_biomedclip import CoOpVPT_BiomedCLIP
 
 
 class _TinyTimmVisual(nn.Module):
@@ -90,7 +94,28 @@ def test_coop_and_visual_prompt_use_one_adamw_group():
     assert optimizer.param_groups[0]["lr"] == 2e-3
 
 
-@__import__("pytest").mark.skipif(
+def _tcp_ablation_cfg(enabled, variant="b0"):
+    cfg = get_cfg_default()
+    extend_cfg(cfg)
+    cfg.OPTIM.NAME = "adamw"
+    cfg.TRAINER.TCP.ENABLED = enabled
+    cfg.TRAINER.CONFUSION_AWARE.VARIANT = variant
+    return cfg
+
+
+def test_tcp_ablation_accepts_on_and_off_for_b0():
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.check_cfg(_tcp_ablation_cfg(True))
+    trainer.check_cfg(_tcp_ablation_cfg(False))
+
+
+def test_tcp_off_rejects_confusion_variant():
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    with pytest.raises(ValueError, match="only supports the b0 variant"):
+        trainer.check_cfg(_tcp_ablation_cfg(False, variant="full"))
+
+
+@pytest.mark.skipif(
     os.environ.get("RUN_BIOMEDCLIP_INTEGRATION") != "1",
     reason="Set RUN_BIOMEDCLIP_INTEGRATION=1 to load cached BiomedCLIP weights",
 )

@@ -1,4 +1,4 @@
-"""From-scratch CoOp + Visual/Text Deep Prompt + MT-TCP trainer.
+"""From-scratch CoOp + Visual/Text VPT trainer with optional MT-TCP.
 
 The optional confusion-aware path uses a fixed support-only soft probability
 prior and current-image global/local evidence. There is one classifier and a
@@ -96,9 +96,18 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         if cfg.OPTIM.NAME.lower() != "adamw":
             raise ValueError("The retained optimizer is AdamW")
         if int(cfg.TRAINER.COOP.N_CTX) != 4:
-            raise ValueError("MT-TCP and CoOp must use four tokens")
+            raise ValueError("The retained CoOp setup requires four tokens")
 
         tcp = cfg.TRAINER.TCP
+        confusion = cfg.TRAINER.CONFUSION_AWARE
+        if confusion.VARIANT not in CONFUSION_VARIANTS:
+            raise ValueError(
+                "Unknown confusion variant {!r}; choose from {}".format(
+                    confusion.VARIANT, CONFUSION_VARIANTS
+                )
+            )
+        if not bool(tcp.ENABLED) and confusion.VARIANT != "b0":
+            raise ValueError("TCP-off ablation only supports the b0 variant")
         expected = {
             "BOTTLENECK_DIM": 128,
             "INSERT_LAYER": 8,
@@ -108,13 +117,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 raise ValueError("MT-TCP requires {}={}".format(field, value))
         if abs(float(tcp.GATE_INIT) - 0.05) > 1e-12:
             raise ValueError("MT-TCP requires GATE_INIT=0.05")
-        confusion = cfg.TRAINER.CONFUSION_AWARE
-        if confusion.VARIANT not in CONFUSION_VARIANTS:
-            raise ValueError(
-                "Unknown confusion variant {!r}; choose from {}".format(
-                    confusion.VARIANT, CONFUSION_VARIANTS
-                )
-            )
         if confusion.VARIANT != "b0" and not confusion.BANK_ROOT:
             raise ValueError("Non-b0 variants require CONFUSION_AWARE.BANK_ROOT")
         if float(confusion.PRIOR_ALPHA) < 0 or float(confusion.GAMMA) < 0:
@@ -147,6 +149,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         self._train_alpha_count = 0
 
         tcp = cfg.TRAINER.TCP
+        self.tcp_enabled = bool(tcp.ENABLED)
         num_tokens = int(self.model.prompt_learner.n_ctx)
         description_batch_size = int(cfg.DATALOADER.TEST.BATCH_SIZE)
         projected_bank, descriptions = build_frozen_description_bank(
@@ -181,14 +184,22 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             insert_layer=tcp.INSERT_LAYER,
             gate_init=tcp.GATE_INIT,
         )
+        tcp_prompt = self.model.text_encoder.tcp_prompt
+        if not self.tcp_enabled:
+            tcp_prompt.set_residual_scale(0.0)
 
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)
         self.model.prompt_learner.ctx.requires_grad_(True)
         for parameter in self.model.image_encoder.visual_prompt.parameters():
             parameter.requires_grad_(True)
-        for parameter in self.model.text_encoder.tcp_prompt.parameters():
+        text_prompt = tcp_prompt.text_prompt
+        for parameter in text_prompt.parameters():
             parameter.requires_grad_(True)
+        if self.tcp_enabled:
+            for name, parameter in tcp_prompt.named_parameters():
+                if not name.startswith("text_prompt."):
+                    parameter.requires_grad_(True)
         if cfg.MODEL.INIT_WEIGHTS:
             raise ValueError("MODEL.INIT_WEIGHTS is forbidden in from-scratch runs")
 
@@ -232,7 +243,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         train_modules = [
             self.model.prompt_learner,
             self.model.image_encoder.visual_prompt,
-            self.model.text_encoder.tcp_prompt,
+            tcp_prompt,
         ]
         if confusion_adapter is not None:
             train_modules.append(confusion_adapter)
@@ -242,7 +253,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         self.prompt_parameters = PromptParameterBundle(
             self.model.prompt_learner,
             visual_prompt=self.model.image_encoder.visual_prompt,
-            tcp=self.model.text_encoder.tcp_prompt,
+            tcp=tcp_prompt,
             confusion=confusion_adapter,
         )
         trainable_parameters = [
@@ -261,6 +272,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             {
                 "protocol": "from_scratch_joint_ce",
                 "variant": self.variant,
+                "tcp_enabled": self.tcp_enabled,
                 "seed": int(cfg.SEED),
                 "shots": int(cfg.DATASET.NUM_SHOTS),
                 "b0_initialization_fingerprint": base_fingerprint,
@@ -285,7 +297,14 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         groups = {
             "coop": [model.prompt_learner.ctx],
             "visual_deep_prompt": list(model.image_encoder.visual_prompt.parameters()),
-            "mt_tcp_including_text_deep": list(model.text_encoder.tcp_prompt.parameters()),
+            "text_vpt": list(
+                model.text_encoder.tcp_prompt.text_prompt.parameters()
+            ),
+            "tcp_mechanism": [
+                parameter
+                for name, parameter in model.text_encoder.tcp_prompt.named_parameters()
+                if not name.startswith("text_prompt.") and parameter.requires_grad
+            ],
             "confusion_aware": (
                 list(model.confusion_adapter.parameters())
                 if model.confusion_adapter is not None
@@ -315,9 +334,15 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "image_encoder.visual_prompt.prompt_embeddings",
         }
         expected.update(
-            "text_encoder.tcp_prompt.{}".format(name)
-            for name, _ in self.model.text_encoder.tcp_prompt.named_parameters()
+            "text_encoder.tcp_prompt.text_prompt.{}".format(name)
+            for name, _ in self.model.text_encoder.tcp_prompt.text_prompt.named_parameters()
         )
+        if self.tcp_enabled:
+            expected.update(
+                "text_encoder.tcp_prompt.{}".format(name)
+                for name, _ in self.model.text_encoder.tcp_prompt.named_parameters()
+                if not name.startswith("text_prompt.")
+            )
         if self.model.confusion_adapter is not None:
             expected.update(
                 "confusion_adapter.{}".format(name)
@@ -461,8 +486,16 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         branches = {
             "CoOp": [model.prompt_learner.ctx],
             "VisualDeep": list(model.image_encoder.visual_prompt.parameters()),
-            "MT-TCP": list(model.text_encoder.tcp_prompt.parameters()),
         }
+        branches["TextVPT"] = list(
+            model.text_encoder.tcp_prompt.text_prompt.parameters()
+        )
+        if self.tcp_enabled:
+            branches["TCP"] = [
+                parameter
+                for name, parameter in model.text_encoder.tcp_prompt.named_parameters()
+                if not name.startswith("text_prompt.")
+            ]
         if model.confusion_adapter is not None and list(model.confusion_adapter.parameters()):
             branches["ConfusionAware"] = list(model.confusion_adapter.parameters())
         norms = {}
@@ -544,6 +577,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "scheduler": self.sched.state_dict() if self.sched is not None else None,
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
             "variant": self.variant,
+            "tcp_enabled": self.tcp_enabled,
             "bank_fingerprint": (
                 self.bank_metadata["bank_fingerprint"]
                 if self.bank_metadata is not None
@@ -580,6 +614,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             raise RuntimeError("Refusing a legacy warm-start checkpoint")
         if checkpoint.get("variant") != self.variant:
             raise RuntimeError("Checkpoint variant does not match current run")
+        if bool(checkpoint.get("tcp_enabled", True)) != self.tcp_enabled:
+            raise RuntimeError("Checkpoint TCP setting does not match current run")
         expected_bank = (
             self.bank_metadata["bank_fingerprint"]
             if self.bank_metadata is not None

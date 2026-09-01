@@ -32,6 +32,34 @@ python train.py `
 
 学习率、优化器、训练轮数及提示结构均以 YAML 配置为准，命令行不重复传入这些参数。
 
+## TCP 消融
+
+TCP 默认开启，因此上面的命令就是 TCP-on 对照组。TCP-off 保留 VPT 中已有的 Text Deep Prompt 及其可学习 token，只将 TCP 类别描述残差固定为零，并冻结 TCP 投影和门控参数；不会增加第二套 Text Prompt，也没有新增 Text Prompt 配置。CoOp、Visual/Text VPT、优化器、`OPTIM.LR`、batch、workers、shot 和 seed 均保持不变。为避免同时改变两个机制，TCP-off 仅允许使用不含 Confusion 模块的 `b0`。
+
+运行 TCP-off 时，在同一条训练命令末尾增加：
+
+```powershell
+TRAINER.TCP.ENABLED False `
+TRAINER.CONFUSION_AWARE.VARIANT b0
+```
+
+例如 DermaMNIST 4-shot、seed 1：
+
+```powershell
+python train.py `
+  --root D:\Data\dermamnist `
+  --output-dir output\tcp_ablation\without_tcp\shots_4\seed1 `
+  --seed 1 `
+  --trainer CoOpVPT_BiomedCLIP `
+  --dataset-config-file configs/datasets/dermamnist.yaml `
+  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml `
+  DATASET.NUM_SHOTS 4 `
+  TRAINER.TCP.ENABLED False `
+  TRAINER.CONFUSION_AWARE.VARIANT b0
+```
+
+TCP-on 与 TCP-off 必须使用不同输出目录；两者的 checkpoint 会记录 TCP 状态，不能交叉恢复或加载。
+
 ## 批量运行 shots 和 seeds
 
 旧的批量启动文件已删除。需要批量实验时，直接在 PowerShell 中循环调用 `train.py`：

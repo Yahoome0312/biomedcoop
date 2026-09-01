@@ -118,6 +118,7 @@ def extend_cfg(cfg):
     cfg.TRAINER.COOPVPT.VPT_DROPOUT = 0.0
     # From-scratch multi-description TCP path.
     cfg.TRAINER.TCP = CN()
+    cfg.TRAINER.TCP.ENABLED = True
     cfg.TRAINER.TCP.BOTTLENECK_DIM = 128
     cfg.TRAINER.TCP.INSERT_LAYER = 8
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = ""
