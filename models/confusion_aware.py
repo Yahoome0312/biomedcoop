@@ -147,10 +147,7 @@ def load_soft_confusion_bank(
             "Soft confusion Bank is missing: {}. Run "
             "scripts/coopvpt/build_confusion_prior.py first.".format(path)
         )
-    try:
-        payload = torch.load(path, map_location="cpu", weights_only=True)
-    except TypeError:  # pragma: no cover - old torch compatibility
-        payload = torch.load(path, map_location="cpu")
+    payload = torch.load(path, map_location="cpu", weights_only=True)
     metadata = payload.get("metadata", {})
     expected = {
         "schema_version": 1,
@@ -181,7 +178,7 @@ def load_soft_confusion_bank(
     actual = _sha256_bytes(prior.contiguous().numpy().tobytes())
     if fingerprint != actual:
         raise RuntimeError("Soft confusion Bank tensor fingerprint mismatch: {}".format(path))
-    return prior, metadata, payload
+    return prior, metadata
 
 
 def select_confusion_pairs(logits, soft_prior, prior_alpha=1.0):

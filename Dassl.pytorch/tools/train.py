@@ -1,9 +1,11 @@
 import argparse
-import torch
 
 from dassl.utils import setup_logger, set_random_seed, collect_env_info
 from dassl.config import get_cfg_default
 from dassl.engine import build_trainer
+
+
+EXPERIMENT_SEEDS = (1, 2, 3)
 
 
 def print_args(args, cfg):
@@ -29,9 +31,6 @@ def reset_cfg(cfg, args):
 
     if args.resume:
         cfg.RESUME = args.resume
-
-    if args.seed:
-        cfg.SEED = args.seed
 
     if args.source_domains:
         cfg.DATASET.SOURCE_DOMAINS = args.source_domains
@@ -82,7 +81,10 @@ def setup_cfg(args):
     reset_cfg(cfg, args)
 
     # 4. From optional input arguments
-    cfg.merge_from_list(args.opts)
+    if args.opts:
+        cfg.merge_from_list(args.opts)
+
+    cfg.SEED = args.seed
 
     cfg.freeze()
 
@@ -91,13 +93,9 @@ def setup_cfg(args):
 
 def main(args):
     cfg = setup_cfg(args)
-    if cfg.SEED >= 0:
-        print("Setting fixed seed: {}".format(cfg.SEED))
-        set_random_seed(cfg.SEED)
+    print("Setting fixed seed: {}".format(cfg.SEED))
+    set_random_seed(cfg.SEED)
     setup_logger(cfg.OUTPUT_DIR)
-
-    if torch.cuda.is_available() and cfg.USE_CUDA:
-        torch.backends.cudnn.benchmark = True
 
     print_args(args, cfg)
     print("Collecting env info ...")
@@ -129,8 +127,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seed",
         type=int,
-        default=-1,
-        help="only positive value enables a fixed seed"
+        choices=EXPERIMENT_SEEDS,
+        default=EXPERIMENT_SEEDS[0],
+        help="experiment seed (fixed to 1, 2 or 3)"
     )
     parser.add_argument(
         "--source-domains",

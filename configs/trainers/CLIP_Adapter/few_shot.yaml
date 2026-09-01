@@ -14,7 +14,6 @@ clip_model: "BiomedCLIP" # 'BiomedCLIP' 'CLIP'
 # ------ Hyper Parameters ------
 lr: 0.01
 train_epoch: 20
-batch_size: 32
 WARMUP_EPOCH: 1
 WARMUP_CONS_LR: 0.00001
 search_alpha_ca: False

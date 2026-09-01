@@ -85,10 +85,7 @@ def _ordered_description_set(classnames, description_map, expected_count):
 
 
 def _load_cached_bank(cache_path, metadata, expected_shape, label, normalized=False):
-    try:
-        payload = torch.load(cache_path, map_location="cpu", weights_only=True)
-    except TypeError:  # pragma: no cover - older torch
-        payload = torch.load(cache_path, map_location="cpu")
+    payload = torch.load(cache_path, map_location="cpu", weights_only=True)
     if payload.get("metadata") != metadata:
         raise RuntimeError("{} cache metadata mismatch: {}".format(label, cache_path))
     bank = payload.get("bank")
@@ -127,7 +124,7 @@ def build_frozen_description_bank(
     classnames,
     description_map,
     expected_count=50,
-    batch_size=64,
+    batch_size=32,
     cache_path=None,
     model_id=BIOMEDCLIP_MODEL_ID,
 ):
@@ -180,7 +177,7 @@ def build_frozen_layer_description_bank(
     description_map,
     insert_layer=8,
     expected_count=50,
-    batch_size=64,
+    batch_size=32,
     cache_path=None,
     model_id=BIOMEDCLIP_MODEL_ID,
 ):
@@ -502,12 +499,9 @@ class MultiTextTCPBertTextEncoder(nn.Module):
         return prompts[:, :keep_length], attention_mask[:, :keep_length]
 
     def _extended_mask(self, attention_mask, input_shape):
-        try:
-            return self.transformer.get_extended_attention_mask(
-                attention_mask, input_shape, device=attention_mask.device
-            )
-        except TypeError:  # pragma: no cover - transformers compatibility
-            return self.transformer.get_extended_attention_mask(attention_mask, input_shape)
+        return self.transformer.get_extended_attention_mask(
+            attention_mask, input_shape, device=attention_mask.device
+        )
 
     def _replace_slots(self, hidden_states, values):
         end = 1 + self.num_tokens

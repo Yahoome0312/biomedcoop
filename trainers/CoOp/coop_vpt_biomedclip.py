@@ -28,7 +28,6 @@ from dassl.utils.torchtools import resume_from_checkpoint, save_checkpoint
 from models.biomedclip_loader import load_biomedclip
 from models.confusion_aware import (
     CONFUSION_VARIANTS,
-    PRIOR_TYPE,
     ConfusionAwareAdapter,
     bank_file,
     confusion_margin_loss,
@@ -42,6 +41,9 @@ from models.multitext_tcp import (
 )
 from trainers.CoOp.coop_biomedclip import CustomCLIP
 from trainers.prompt_templates import BIOMEDCOOP_TEMPLATES
+
+
+DESCRIPTION_COUNT = 50
 
 
 def _json_write(path, value):
@@ -70,7 +72,6 @@ class PromptParameterBundle(nn.Module):
         self,
         prompt_learner,
         visual_prompt=None,
-        text_prompt=None,
         tcp=None,
         confusion=None,
     ):
@@ -78,8 +79,6 @@ class PromptParameterBundle(nn.Module):
         self.prompt_learner = prompt_learner
         if visual_prompt is not None:
             self.visual_prompt = visual_prompt
-        if text_prompt is not None:
-            self.text_prompt = text_prompt
         if tcp is not None:
             self.tcp = tcp
         if confusion is not None:
@@ -94,32 +93,21 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         trainer_cfg = cfg.TRAINER.COOPVPT
         if trainer_cfg.PREC not in {"fp16", "fp32", "amp"}:
             raise ValueError("COOPVPT.PREC must be fp16, fp32 or amp")
-        if trainer_cfg.VPT_MODE != "deep" or trainer_cfg.VPT_INIT != "uniform":
-            raise ValueError("The retained visual path requires uniform Deep VPT")
-        if trainer_cfg.OPTIM.NAME.lower() != "adamw":
+        if cfg.OPTIM.NAME.lower() != "adamw":
             raise ValueError("The retained optimizer is AdamW")
+        if int(cfg.TRAINER.COOP.N_CTX) != 4:
+            raise ValueError("MT-TCP and CoOp must use four tokens")
 
         tcp = cfg.TRAINER.TCP
-        if not tcp.ENABLED:
-            raise ValueError("The from-scratch B0 requires MT-TCP enabled")
         expected = {
-            "NUM_TOKENS": 4,
             "BOTTLENECK_DIM": 128,
             "INSERT_LAYER": 8,
-            "DESCRIPTION_COUNT": 50,
         }
         for field, value in expected.items():
             if int(getattr(tcp, field)) != value:
                 raise ValueError("MT-TCP requires {}={}".format(field, value))
         if abs(float(tcp.GATE_INIT) - 0.05) > 1e-12:
             raise ValueError("MT-TCP requires GATE_INIT=0.05")
-        if not trainer_cfg.VPT_ENABLED or trainer_cfg.TEXT_VPT_ENABLED:
-            raise ValueError("MT-TCP owns TextDeep and requires Visual Deep VPT")
-        if getattr(tcp, "INIT_BASELINE_CHECKPOINT", ""):
-            raise ValueError(
-                "Warm-start checkpoints are forbidden; MT-TCP must train from scratch"
-            )
-
         confusion = cfg.TRAINER.CONFUSION_AWARE
         if confusion.VARIANT not in CONFUSION_VARIANTS:
             raise ValueError(
@@ -127,8 +115,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                     confusion.VARIANT, CONFUSION_VARIANTS
                 )
             )
-        if confusion.PRIOR_TYPE != PRIOR_TYPE:
-            raise ValueError("Only soft_probability_mean prior is supported")
         if confusion.VARIANT != "b0" and not confusion.BANK_ROOT:
             raise ValueError("Non-b0 variants require CONFUSION_AWARE.BANK_ROOT")
         if float(confusion.PRIOR_ALPHA) < 0 or float(confusion.GAMMA) < 0:
@@ -152,9 +138,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             biomedclip_model.float()
 
         self.model = CustomCLIP(cfg, classnames, biomedclip_model.eval())
-        self.vpt_enabled = True
-        self.text_vpt_enabled = False
-        self.tcp_enabled = True
         self.variant = str(cfg.TRAINER.CONFUSION_AWARE.VARIANT)
         self._gradient_audit_complete = False
         self._train_pair_counts = torch.zeros(
@@ -162,18 +145,17 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         )
         self._train_alpha_sum = torch.zeros(2, dtype=torch.float64)
         self._train_alpha_count = 0
-        self._analysis_tag = None
 
         tcp = cfg.TRAINER.TCP
-        if int(tcp.NUM_TOKENS) != int(self.model.prompt_learner.n_ctx):
-            raise ValueError("MT-TCP and CoOp must both use four tokens")
+        num_tokens = int(self.model.prompt_learner.n_ctx)
+        description_batch_size = int(cfg.DATALOADER.TEST.BATCH_SIZE)
         projected_bank, descriptions = build_frozen_description_bank(
             biomedclip_model,
             self.model.prompt_learner.tokenizer,
             classnames,
             BIOMEDCOOP_TEMPLATES,
-            expected_count=tcp.DESCRIPTION_COUNT,
-            batch_size=tcp.DESCRIPTION_BATCH_SIZE,
+            expected_count=DESCRIPTION_COUNT,
+            batch_size=description_batch_size,
             cache_path=tcp.DESCRIPTION_CACHE or None,
         )
         layer_bank, layer_descriptions = build_frozen_layer_description_bank(
@@ -182,8 +164,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             classnames,
             BIOMEDCOOP_TEMPLATES,
             insert_layer=tcp.INSERT_LAYER,
-            expected_count=tcp.DESCRIPTION_COUNT,
-            batch_size=tcp.DESCRIPTION_BATCH_SIZE,
+            expected_count=DESCRIPTION_COUNT,
+            batch_size=description_batch_size,
             cache_path=tcp.LAYER_DESCRIPTION_CACHE or None,
         )
         if layer_descriptions != descriptions:
@@ -194,7 +176,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             projected_description_bank=projected_bank,
             descriptions=descriptions,
             classnames=classnames,
-            num_tokens=tcp.NUM_TOKENS,
+            num_tokens=num_tokens,
             bottleneck_dim=tcp.BOTTLENECK_DIM,
             insert_layer=tcp.INSERT_LAYER,
             gate_init=tcp.GATE_INIT,
@@ -227,7 +209,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 cfg.DATASET.NUM_SHOTS,
                 cfg.SEED,
             )
-            soft_prior, metadata, _payload = load_soft_confusion_bank(
+            soft_prior, metadata = load_soft_confusion_bank(
                 path,
                 dataset_name=cfg.DATASET.NAME,
                 shots=cfg.DATASET.NUM_SHOTS,
@@ -266,8 +248,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         trainable_parameters = [
             parameter for parameter in self.model.parameters() if parameter.requires_grad
         ]
-        self.optim = build_optimizer(trainable_parameters, trainer_cfg.OPTIM)
-        self.sched = build_lr_scheduler(self.optim, trainer_cfg.OPTIM)
+        self.optim = build_optimizer(trainable_parameters, cfg.OPTIM)
+        self.sched = build_lr_scheduler(self.optim, cfg.OPTIM)
         self.register_model(
             "prompt_parameters", self.prompt_parameters, self.optim, self.sched
         )
@@ -544,7 +526,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         for key, value in results.items():
             self.write_scalar("{}/{}".format(split, key), value, self.epoch)
         if records:
-            tag = self._analysis_tag or "{}_epoch_{:03d}".format(split, self.epoch + 1)
+            tag = "{}_epoch_{:03d}".format(split, self.epoch + 1)
             path = Path(self.output_dir) / "confusion_analysis" / "{}.json.gz".format(tag)
             path.parent.mkdir(parents=True, exist_ok=True)
             with gzip.open(path, "wt", encoding="utf-8") as stream:
@@ -619,8 +601,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
     def load_model(self, directory, epoch=None):
         if not directory:
-            print("load_model() skipped because no directory was provided")
-            return
+            raise ValueError("A checkpoint directory is required")
         model_file = (
             "model-best.pth.tar"
             if epoch is None

@@ -1,7 +1,6 @@
 import argparse
-import torch
 
-from dassl.utils import setup_logger, set_random_seed, collect_env_info
+from dassl.utils import setup_logger, set_random_seed
 from dassl.config import get_cfg_default
 from dassl.engine import build_trainer
 
@@ -42,6 +41,11 @@ import trainers.BiomedCoOp.biomedcoop_pubmedclip
 import trainers.BiomedCoOp.biomedcoop_pmcclip
 
 
+FIXED_BATCH_SIZE = 32
+FIXED_NUM_WORKERS = 8
+EXPERIMENT_SEEDS = (1, 2, 3)
+
+
 def print_args(args, cfg):
     print("***************")
     print("** Arguments **")
@@ -65,9 +69,6 @@ def reset_cfg(cfg, args):
 
     if args.resume:
         cfg.RESUME = args.resume
-
-    if args.seed:
-        cfg.SEED = args.seed
 
     if args.source_domains:
         cfg.DATASET.SOURCE_DOMAINS = args.source_domains
@@ -113,55 +114,21 @@ def extend_cfg(cfg):
 
     cfg.TRAINER.COOPVPT = CN()
     cfg.TRAINER.COOPVPT.PREC = "fp32"
-    cfg.TRAINER.COOPVPT.VPT_ENABLED = False
-    cfg.TRAINER.COOPVPT.VPT_MODE = "deep"
     cfg.TRAINER.COOPVPT.VPT_N_CTX = 5
     cfg.TRAINER.COOPVPT.VPT_DROPOUT = 0.0
-    cfg.TRAINER.COOPVPT.VPT_INIT = "uniform"
-    cfg.TRAINER.COOPVPT.TEXT_VPT_ENABLED = False
-    cfg.TRAINER.COOPVPT.TEXT_VPT_MODE = "deep"
-    cfg.TRAINER.COOPVPT.TEXT_VPT_N_CTX = 4
-    cfg.TRAINER.COOPVPT.TEXT_VPT_DROPOUT = 0.0
-    cfg.TRAINER.COOPVPT.TEXT_VPT_INIT = "normal"
-    # One AdamW configuration and one shared LR cover CoOp and VPT prompts.
-    cfg.TRAINER.COOPVPT.OPTIM = cfg.OPTIM.clone()
-    cfg.TRAINER.COOPVPT.OPTIM.NAME = "adamw"
-    cfg.TRAINER.COOPVPT.OPTIM.LR = 0.002
-    cfg.TRAINER.COOPVPT.OPTIM.WEIGHT_DECAY = 5e-4
-    cfg.TRAINER.COOPVPT.OPTIM.MAX_EPOCH = 100
-    cfg.TRAINER.COOPVPT.OPTIM.LR_SCHEDULER = "cosine"
-    cfg.TRAINER.COOPVPT.OPTIM.WARMUP_EPOCH = 1
-    cfg.TRAINER.COOPVPT.OPTIM.WARMUP_TYPE = "constant"
-    cfg.TRAINER.COOPVPT.OPTIM.WARMUP_CONS_LR = 1e-5
-
-    # From-scratch multi-description TCP path. The legacy warm-start and
-    # auxiliary-loss fields remain parseable only to reject old checkpoints.
+    # From-scratch multi-description TCP path.
     cfg.TRAINER.TCP = CN()
-    cfg.TRAINER.TCP.ENABLED = False
-    cfg.TRAINER.TCP.NUM_TOKENS = 4
     cfg.TRAINER.TCP.BOTTLENECK_DIM = 128
     cfg.TRAINER.TCP.INSERT_LAYER = 8
-    cfg.TRAINER.TCP.DESCRIPTION_COUNT = 50
-    cfg.TRAINER.TCP.DESCRIPTION_BATCH_SIZE = 64
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = ""
     cfg.TRAINER.TCP.LAYER_DESCRIPTION_CACHE = ""
     cfg.TRAINER.TCP.GATE_INIT = 0.05
-    cfg.TRAINER.TCP.KG_WEIGHT = 0.0
-    cfg.TRAINER.TCP.RESIDUAL_WARMUP_EPOCHS = 0
-    cfg.TRAINER.TCP.PROMPT_ANCHOR_WEIGHT = 0.0
-    cfg.TRAINER.TCP.PROMPT_ANCHOR_L2_WEIGHT = 0.0
-    cfg.TRAINER.TCP.EVAL_WARMSTART = False
-    cfg.TRAINER.TCP.CROSS_MODAL_PROTO_WEIGHT = 0.0
-    cfg.TRAINER.TCP.CROSS_MODAL_PROTO_TEMPERATURE = 0.1
-    cfg.TRAINER.TCP.INIT_BASELINE_CHECKPOINT = ""
-
     cfg.TRAINER.CONFUSION_AWARE = CN()
     cfg.TRAINER.CONFUSION_AWARE.VARIANT = "b0"
     cfg.TRAINER.CONFUSION_AWARE.BANK_ROOT = ""
     cfg.TRAINER.CONFUSION_AWARE.PRIOR_ALPHA = 1.0
     cfg.TRAINER.CONFUSION_AWARE.GAMMA = 0.2
     cfg.TRAINER.CONFUSION_AWARE.LAMBDA_CONF = 1.0
-    cfg.TRAINER.CONFUSION_AWARE.PRIOR_TYPE = "soft_probability_mean"
 
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 4  # number of context vectors
@@ -217,7 +184,15 @@ def setup_cfg(args):
     reset_cfg(cfg, args)
 
     # 4. From optional input arguments
-    cfg.merge_from_list(args.opts)
+    if args.opts:
+        cfg.merge_from_list(args.opts)
+
+    # These values are experiment invariants, not tunable hyperparameters.
+    cfg.DATALOADER.TRAIN_X.BATCH_SIZE = FIXED_BATCH_SIZE
+    cfg.DATALOADER.TRAIN_U.BATCH_SIZE = FIXED_BATCH_SIZE
+    cfg.DATALOADER.TEST.BATCH_SIZE = FIXED_BATCH_SIZE
+    cfg.DATALOADER.NUM_WORKERS = FIXED_NUM_WORKERS
+    cfg.SEED = args.seed
 
     cfg.freeze()
 
@@ -226,31 +201,18 @@ def setup_cfg(args):
 
 def main(args):
     cfg = setup_cfg(args)
-    if cfg.SEED >= 0:
-        print("Setting fixed seed: {}".format(cfg.SEED))
-        set_random_seed(cfg.SEED)
+    print("Setting fixed seed: {}".format(cfg.SEED))
+    set_random_seed(cfg.SEED)
     setup_logger(cfg.OUTPUT_DIR)
 
-    if torch.cuda.is_available() and cfg.USE_CUDA:
-        torch.backends.cudnn.benchmark = True
-
     print_args(args, cfg)
-    print("Collecting env info ...")
-    # [Reproduction compatibility] PyTorch's collect_env helper can return
-    # None/raise on Windows when a system query is unavailable. Environment
-    # collection must not prevent the actual experiment from running.
-    try:
-        env_info = collect_env_info()
-    except Exception as exc:
-        env_info = "Environment info unavailable: {}: {}".format(
-            type(exc).__name__, exc
-        )
-    print("** System info **\n{}\n".format(env_info))
 
     trainer = build_trainer(cfg)
     print("Trainer built successfully.")
 
     if args.eval_only:
+        if not args.model_dir:
+            raise ValueError("--eval-only requires --model-dir")
         trainer.load_model(args.model_dir, epoch=args.load_epoch)
         trainer.test()
         return
@@ -270,7 +232,11 @@ if __name__ == "__main__":
         help="checkpoint directory (from which the training resumes)",
     )
     parser.add_argument(
-        "--seed", type=int, default=-1, help="only positive value enables a fixed seed"
+        "--seed",
+        type=int,
+        choices=EXPERIMENT_SEEDS,
+        default=EXPERIMENT_SEEDS[0],
+        help="experiment seed (fixed to 1, 2 or 3)",
     )
     parser.add_argument(
         "--source-domains", type=str, nargs="+", help="source domains for DA/DG"

@@ -70,8 +70,6 @@ def _cfg(args, shots, seed):
             opts=[
                 "DATASET.NUM_SHOTS",
                 str(shots),
-                "DATALOADER.NUM_WORKERS",
-                str(args.num_workers),
             ],
         )
     )
@@ -111,9 +109,9 @@ def build_one(args, shots, seed):
     wrapper = DatasetWrapper(cfg, support, transform=transform, is_train=False)
     loader = DataLoader(
         wrapper,
-        batch_size=int(args.batch_size),
+        batch_size=train.FIXED_BATCH_SIZE,
         shuffle=False,
-        num_workers=int(args.num_workers),
+        num_workers=train.FIXED_NUM_WORKERS,
         drop_last=False,
     )
 
@@ -205,9 +203,6 @@ def parse_args():
         "--output-root", type=Path, default=REPO / "output" / "soft_confusion_banks"
     )
     parser.add_argument("--shots", nargs="+", type=int, default=(4, 8, 16, 32))
-    parser.add_argument("--seeds", nargs="+", type=int, default=(1, 2, 3))
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--num-workers", type=int, default=0)
     return parser.parse_args()
 
 
@@ -215,7 +210,7 @@ def main():
     args = parse_args()
     args.output_root = args.output_root.resolve()
     for shots in args.shots:
-        for seed in args.seeds:
+        for seed in train.EXPERIMENT_SEEDS:
             build_one(args, shots, seed)
 
 

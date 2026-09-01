@@ -14,7 +14,7 @@ _C.OUTPUT_DIR = "./output"
 _C.RESUME = ""
 # Set seed to negative value to randomize everything
 # Set seed to positive value to use a fixed seed
-_C.SEED = -1
+_C.SEED = 1
 _C.USE_CUDA = True
 # Print detailed information
 # E.g. trainer, dataset, and backbone
@@ -89,10 +89,7 @@ _C.DATASET.ALL_AS_UNLABELED = False
 # Dataloader
 ###########################
 _C.DATALOADER = CN()
-_C.DATALOADER.NUM_WORKERS = 4
-# Keep workers alive across epochs when requested. This is especially useful
-# on Windows, where respawning workers every epoch is expensive.
-_C.DATALOADER.PERSISTENT_WORKERS = False
+_C.DATALOADER.NUM_WORKERS = 8
 # Apply transformations to an image K times (during training)
 _C.DATALOADER.K_TRANSFORMS = 1
 # img0 denotes image tensor without augmentation

@@ -47,10 +47,6 @@ def build_data_loader(
         sampler=sampler,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
         drop_last=is_train and len(data_source) >= batch_size,
-        persistent_workers=(
-            cfg.DATALOADER.PERSISTENT_WORKERS
-            and cfg.DATALOADER.NUM_WORKERS > 0
-        ),
         pin_memory = False
         # pin_memory=(torch.cuda.is_available() and cfg.USE_CUDA),
     )

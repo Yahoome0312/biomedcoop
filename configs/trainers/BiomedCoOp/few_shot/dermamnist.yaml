@@ -1,13 +1,3 @@
-DATALOADER:
-  # [Windows reproduction] Four workers are stable on the target machine;
-  # the upstream Linux configuration used eight.
-  NUM_WORKERS: 4
-  PERSISTENT_WORKERS: True
-  TRAIN_X:
-    BATCH_SIZE: 4
-  TEST:
-    BATCH_SIZE: 100
-
 INPUT:
   SIZE: (224, 224)
   INTERPOLATION: "bicubic"
@@ -44,4 +34,3 @@ TRAINER:
     KDSP_LAMBDA: 20.0
     TAU: 1.5
     N_PROMPTS: 50
-    

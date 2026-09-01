@@ -3,7 +3,7 @@ root_path: '/mnt/data/' # '/mnt/data/' #Set the datasets path here
 output_dir: './results'
 
 # ------ Basic Config ------
-method: 'LinearProbe' 
+method: 'LinearProbe'
 shots: 1
 tasks: 3
 backbone: 'ViT-B/16' # 'Vit-B/16' 'Vit-B/32'
@@ -13,8 +13,7 @@ clip_model: "BiomedCLIP" # 'BiomedCLIP' 'CLIP' 'PubMedCLIP'
 
 # ------ Hyper Parameters ------
 lr: 0.001
-train_epoch: 300 
-batch_size: 256
+train_epoch: 300
 num_step: 8
 
 finetune: True # Whether to finetune or not

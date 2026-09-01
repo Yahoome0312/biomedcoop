@@ -353,7 +353,7 @@ class DatasetWrapper(TorchDataset):
 
 def build_data_loader(
     data_source=None,
-    batch_size=64,
+    batch_size=32,
     input_size=224,
     tfm=None,
     is_train=True,

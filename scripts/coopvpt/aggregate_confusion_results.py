@@ -464,18 +464,7 @@ def _load_bank_diagnostics(
     for shot in SHOTS:
         diagnostics[str(shot)] = {}
         for seed in (1, 2, 3):
-            # Dataset is stable for this experiment; use run metadata when it
-            # is available so a copied report remains self-describing.
-            run_manifest = (
-                _method_dir(root, "b0")
-                / f"shots_{shot}"
-                / f"seed{seed}"
-                / "run_manifest.json"
-            )
-            dataset = "DermaMNIST"
-            if run_manifest.exists():
-                dataset = str(_load(run_manifest).get("dataset", dataset))
-            path = _bank_path(root, shot, seed, dataset, bank_root)
+            path = _bank_path(root, shot, seed, bank_root=bank_root)
             if path is None:
                 diagnostics[str(shot)][str(seed)] = {"missing": True}
                 continue
@@ -559,21 +548,10 @@ def _load_saved_confusion_matrix(
     path = run_dir / f"test_cmat{suffix}_selected_by_{selection}.pt"
     if not path.exists():
         return None
-    try:
-        import torch
+    import torch
 
-        try:
-            matrix = torch.load(path, map_location="cpu", weights_only=False)
-        except TypeError:  # PyTorch < 2.6
-            matrix = torch.load(path, map_location="cpu")
-        if hasattr(matrix, "tolist"):
-            matrix = matrix.tolist()
-        return matrix
-    except Exception:
-        # Matrix files are supplementary to the scalar report.  Keep report
-        # generation usable in a minimal environment and expose the missing
-        # matrix as ``None`` rather than silently fabricating values.
-        return None
+    matrix = torch.load(path, map_location="cpu", weights_only=False)
+    return matrix.tolist() if hasattr(matrix, "tolist") else matrix
 
 
 def _confusion_analysis(

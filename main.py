@@ -1,14 +1,11 @@
 import os
 import random
 import argparse
-import yaml
-import time
 import pandas as pd
 from tqdm import tqdm
 import requests
 
 import torch
-import torch.nn.functional as F
 import torch.nn as nn
 import torchvision.transforms as transforms
 
@@ -24,6 +21,8 @@ from clip.pmcclip import ModifiedResNet, image_transform
 from transformers import AutoTokenizer, AutoModel
 
 directory = "clip/checkpoints"
+FIXED_BATCH_SIZE = 32
+EXPERIMENT_SEEDS = (1, 2, 3)
 
 # File URLs
 pubmedclip_files = {
@@ -70,6 +69,8 @@ def get_arguments():
     cfg.update(load_cfg_from_cfg_file(args.dataset_config))
     if args.opts is not None:
         cfg = merge_cfg_from_list(cfg, args.opts)
+    cfg["batch_size"] = FIXED_BATCH_SIZE
+    cfg["tasks"] = len(EXPERIMENT_SEEDS)
     return cfg
 
 class PMCCLIP(nn.Module):
@@ -180,6 +181,8 @@ def main():
     # Prepare dataset
     random.seed(1)
     torch.manual_seed(1)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(1)
 
     cfg.DATASET.ROOT = cfg['root_path']
     cfg.SEED = 1
@@ -189,7 +192,7 @@ def main():
     print("Preparing dataset.")
     dataset = build_dataset(cfg)
     classnames = dataset.classnames
-    test_loader = build_data_loader(data_source=dataset.test, batch_size=100, is_train=False, tfm=preprocess, shuffle=False)
+    test_loader = build_data_loader(data_source=dataset.test, batch_size=FIXED_BATCH_SIZE, is_train=False, tfm=preprocess, shuffle=False)
 
     train_tranform = transforms.Compose([
         transforms.RandomResizedCrop(size=224, scale=(0.5, 1), interpolation=transforms.InterpolationMode.BICUBIC),
@@ -213,17 +216,17 @@ def main():
             dataset.classnames, template, clip_model)
 
     # Pre-load test features
-    f_test_time = time.time()
     print("\nLoading visual features and labels from test set.")
     test_features, test_labels = pre_load_features(
         cfg, "test", clip_model, test_loader)
 
-    total_acc = 0
     predictions = []
-    for i in range(cfg['tasks']):
-        random.seed(i+1)
-        torch.manual_seed(i+1)
-        print("Start Training Task:{}".format(str(i+1)))
+    for task_index, seed in enumerate(EXPERIMENT_SEEDS, start=1):
+        random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        print("Start Training Task:{} (seed={})".format(task_index, seed))
         few_shot_train_data = dataset.generate_fewshot_dataset_(cfg['shots'], split="train")
         few_shot_val_data = dataset.generate_fewshot_dataset_(cfg['shots'], split="val") 
 
@@ -243,7 +246,7 @@ def main():
                         text_weights=clip_weights,
                         model=clip_model,
                         classnames=classnames)
-        print('Final Accuracy on task {}: {}'.format(str(i+1), acc))
+        print('Final Accuracy on task {}: {}'.format(task_index, acc))
         predictions.append(acc)
     tasks_acc, tasks_std = compute_confidence_interval(predictions)
     test_stats = {}
@@ -261,7 +264,7 @@ def write_to_csv(cfg, path, test_stats):
     
     try:
         res = pd.read_csv(path)
-    except:
+    except (FileNotFoundError, pd.errors.EmptyDataError):
         res = pd.DataFrame()
     records = res.to_dict('records')
     if cfg['method'] == "TIPAdapter" and cfg["finetune"]:
@@ -280,4 +283,3 @@ def write_to_csv(cfg, path, test_stats):
 
 if __name__ == '__main__':
     main()
-

@@ -38,10 +38,7 @@ def _load_tensor(path: Path) -> list[list[float]]:
 
     import torch
 
-    try:
-        matrix = torch.load(path, map_location="cpu", weights_only=False)
-    except TypeError:  # PyTorch < 2.6
-        matrix = torch.load(path, map_location="cpu")
+    matrix = torch.load(path, map_location="cpu", weights_only=False)
     if hasattr(matrix, "tolist"):
         matrix = matrix.tolist()
     return [[float(value) for value in row] for row in matrix]
