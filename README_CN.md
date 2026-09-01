@@ -2,7 +2,7 @@
 
 ## 方法说明
 
-本仓库基于 BiomedCLIP 实现医学图像少样本提示学习。当前 DermaMNIST 主线使用 CoOp、Visual/Text VPT、可选 TCP 和固定的 Full Confusion 从头联合训练。Full Confusion 使用训练集 support 样本构建的 Soft Bank，并使用 LLM 给出的有向类别对描述生成 Semantic 特征，不再直接计算类别文本特征差。BiomedCLIP 主干保持冻结，仅更新提示及 Full Confusion 参数；K-shot 采样只作用于训练集，验证集和测试集保持官方完整划分。
+本仓库基于 BiomedCLIP 实现医学图像少样本提示学习。当前 DermaMNIST 主线使用 CoOp、Visual/Text VPT、可选 TCP 和可选 Full Confusion 从头联合训练，TCP 与 Full Confusion 均默认开启。Full Confusion 使用训练集 support 样本构建的 Soft Bank，并使用 LLM 给出的有向类别对描述生成 Semantic 特征，不再直接计算类别文本特征差。BiomedCLIP 主干保持冻结，仅更新已启用的提示和 Full Confusion 参数；K-shot 采样只作用于训练集，验证集和测试集保持官方完整划分。
 
 同一次实验中的可训练提示参数共用一套优化器和配置中的 `OPTIM.LR`，各提示分支不再设置独立学习率。训练、验证和测试的 `batch_size` 固定为 `32`，`num_workers` 固定为 `8`。实验 seed 只允许 `1、2、3`，每条训练命令运行其中一个 seed。cuDNN 使用 PyTorch 默认状态。
 
@@ -66,6 +66,28 @@ python train.py `
 ```
 
 TCP-on 与 TCP-off 必须使用不同输出目录；两者的 checkpoint 会记录 TCP 状态，不能交叉恢复或加载。
+
+## Confusion Aware 消融
+
+Confusion Aware 默认开启。关闭时在训练命令末尾增加：
+
+```powershell
+TRAINER.CONFUSION_AWARE.ENABLED False
+```
+
+关闭后代码会直接使用基础分类 logits 和交叉熵，并跳过 Soft Bank、`confuse_pair/<dataset>.txt`、Confusion Adapter、margin loss、Confusion 分析记录及对应梯度检查。因此无需提供 `BANK_ROOT`，`GAMMA=0` 和 `LAMBDA_CONF=0` 也不再作为关闭方式。
+
+五组消融使用下面的 Trainer 和开关组合：
+
+| 方法 | Trainer | 命令末尾配置 |
+|---|---|---|
+| CoOp | `CoOp_BiomedCLIP` | 无 |
+| CoOp + Deep Prompt | `CoOpVPT_BiomedCLIP` | `TRAINER.TCP.ENABLED False TRAINER.CONFUSION_AWARE.ENABLED False` |
+| CoOp + Deep Prompt + MT-TCP | `CoOpVPT_BiomedCLIP` | `TRAINER.CONFUSION_AWARE.ENABLED False` |
+| CoOp + Deep Prompt + Confusion Aware | `CoOpVPT_BiomedCLIP` | `TRAINER.TCP.ENABLED False` |
+| CoOp + Deep Prompt + MT-TCP + Confusion Aware | `CoOpVPT_BiomedCLIP` | 无 |
+
+不同组合必须使用不同输出目录。checkpoint 会同时记录 TCP 和 Confusion Aware 状态，不能在不同组合之间交叉恢复或加载。
 
 ## 批量运行 shots 和 seeds
 

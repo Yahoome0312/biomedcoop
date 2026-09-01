@@ -46,6 +46,7 @@ from trainers.prompt_templates import BIOMEDCOOP_TEMPLATES
 DESCRIPTION_COUNT = 50
 PAIR_DESCRIPTION_ROOT = Path(__file__).resolve().parents[2] / "confuse_pair"
 PROTOCOL = "full_confusion_llm_pair_gt_anchor_margin_v1"
+NO_CONFUSION_PROTOCOL = "coop_vpt_no_confusion_v1"
 
 
 def _json_write(path, value):
@@ -68,7 +69,7 @@ def _parameter_fingerprint(named_parameters):
 
 
 class PromptParameterBundle(nn.Module):
-    """Checkpoint every trainable adapter plus the fixed Bank identity."""
+    """Checkpoint every adapter enabled for the current ablation."""
 
     def __init__(self, prompt_learner, visual_prompt, tcp, confusion):
         super().__init__()
@@ -102,12 +103,13 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 raise ValueError("MT-TCP requires {}={}".format(field, value))
         if abs(float(tcp.GATE_INIT) - 0.05) > 1e-12:
             raise ValueError("MT-TCP requires GATE_INIT=0.05")
-        if not confusion.BANK_ROOT:
-            raise ValueError("Full confusion requires CONFUSION_AWARE.BANK_ROOT")
-        if float(confusion.PRIOR_ALPHA) < 0 or float(confusion.GAMMA) < 0:
-            raise ValueError("PRIOR_ALPHA and GAMMA must be non-negative")
-        if float(confusion.LAMBDA_CONF) < 0:
-            raise ValueError("LAMBDA_CONF must be non-negative")
+        if confusion.ENABLED:
+            if not confusion.BANK_ROOT:
+                raise ValueError("Full confusion requires CONFUSION_AWARE.BANK_ROOT")
+            if float(confusion.PRIOR_ALPHA) < 0 or float(confusion.GAMMA) < 0:
+                raise ValueError("PRIOR_ALPHA and GAMMA must be non-negative")
+            if float(confusion.LAMBDA_CONF) < 0:
+                raise ValueError("LAMBDA_CONF must be non-negative")
 
     def build_model(self):
         cfg = self.cfg
@@ -126,11 +128,15 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
         self.model = CustomCLIP(cfg, classnames, biomedclip_model.eval())
         self._gradient_audit_complete = False
-        self._train_pair_counts = torch.zeros(
-            len(classnames), len(classnames), dtype=torch.long
-        )
-        self._train_alpha_sum = torch.zeros(2, dtype=torch.float64)
-        self._train_alpha_count = 0
+        confusion_cfg = cfg.TRAINER.CONFUSION_AWARE
+        self.confusion_enabled = bool(confusion_cfg.ENABLED)
+        self.protocol = PROTOCOL if self.confusion_enabled else NO_CONFUSION_PROTOCOL
+        if self.confusion_enabled:
+            self._train_pair_counts = torch.zeros(
+                len(classnames), len(classnames), dtype=torch.long
+            )
+            self._train_alpha_sum = torch.zeros(2, dtype=torch.float64)
+            self._train_alpha_count = 0
 
         tcp = cfg.TRAINER.TCP
         self.tcp_enabled = bool(tcp.ENABLED)
@@ -194,42 +200,45 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         ]
         base_fingerprint, base_entries = _parameter_fingerprint(base_named)
 
-        confusion_cfg = cfg.TRAINER.CONFUSION_AWARE
-        path = bank_file(
-            confusion_cfg.BANK_ROOT,
-            cfg.DATASET.NAME,
-            cfg.DATASET.NUM_SHOTS,
-            cfg.SEED,
-        )
-        soft_prior, self.bank_metadata = load_soft_confusion_bank(
-            path,
-            dataset_name=cfg.DATASET.NAME,
-            shots=cfg.DATASET.NUM_SHOTS,
-            seed=cfg.SEED,
-            classnames=classnames,
-            support_items=self.dm.dataset.train_x,
-        )
-        pair_description_file = PAIR_DESCRIPTION_ROOT / "{}.txt".format(
-            str(cfg.DATASET.NAME).casefold()
-        )
-        pair_description_bank, self.pair_description_metadata = (
-            build_frozen_pair_description_bank(
-                biomedclip_model,
-                self.model.prompt_learner.tokenizer,
-                classnames,
-                pair_description_file,
-                batch_size=int(cfg.DATALOADER.TEST.BATCH_SIZE),
+        confusion_adapter = None
+        self.bank_metadata = None
+        self.pair_description_metadata = None
+        if self.confusion_enabled:
+            path = bank_file(
+                confusion_cfg.BANK_ROOT,
+                cfg.DATASET.NAME,
+                cfg.DATASET.NUM_SHOTS,
+                cfg.SEED,
             )
-        )
-        confusion_adapter = ConfusionAwareAdapter(
-            soft_prior,
-            self.bank_metadata["bank_fingerprint"],
-            pair_description_bank,
-            self.pair_description_metadata["feature_fingerprint"],
-            prior_alpha=confusion_cfg.PRIOR_ALPHA,
-            gamma=confusion_cfg.GAMMA,
-        )
-        self.model.confusion_adapter = confusion_adapter
+            soft_prior, self.bank_metadata = load_soft_confusion_bank(
+                path,
+                dataset_name=cfg.DATASET.NAME,
+                shots=cfg.DATASET.NUM_SHOTS,
+                seed=cfg.SEED,
+                classnames=classnames,
+                support_items=self.dm.dataset.train_x,
+            )
+            pair_description_file = PAIR_DESCRIPTION_ROOT / "{}.txt".format(
+                str(cfg.DATASET.NAME).casefold()
+            )
+            pair_description_bank, self.pair_description_metadata = (
+                build_frozen_pair_description_bank(
+                    biomedclip_model,
+                    self.model.prompt_learner.tokenizer,
+                    classnames,
+                    pair_description_file,
+                    batch_size=int(cfg.DATALOADER.TEST.BATCH_SIZE),
+                )
+            )
+            confusion_adapter = ConfusionAwareAdapter(
+                soft_prior,
+                self.bank_metadata["bank_fingerprint"],
+                pair_description_bank,
+                self.pair_description_metadata["feature_fingerprint"],
+                prior_alpha=confusion_cfg.PRIOR_ALPHA,
+                gamma=confusion_cfg.GAMMA,
+            )
+            self.model.confusion_adapter = confusion_adapter
 
         self.model.to(self.device)
         self.model.eval()
@@ -238,7 +247,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             self.model.image_encoder.visual_prompt,
             tcp_prompt,
         ]
-        train_modules.append(confusion_adapter)
+        if self.confusion_enabled:
+            train_modules.append(confusion_adapter)
         for module in train_modules:
             module.train()
 
@@ -259,29 +269,31 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         self.scaler = GradScaler() if trainer_cfg.PREC == "amp" else None
         self._audit_trainable_parameters()
 
-        _json_write(
-            Path(cfg.OUTPUT_DIR) / "initialization_manifest.json",
-            {
-                "protocol": PROTOCOL,
-                "tcp_enabled": self.tcp_enabled,
-                "seed": int(cfg.SEED),
-                "shots": int(cfg.DATASET.NUM_SHOTS),
-                "core_initialization_fingerprint": base_fingerprint,
-                "core_parameters": base_entries,
-                "bank_fingerprint": self.bank_metadata["bank_fingerprint"],
-                "pair_description_fingerprint": self.pair_description_metadata[
+        manifest = {
+            "protocol": self.protocol,
+            "tcp_enabled": self.tcp_enabled,
+            "confusion_enabled": self.confusion_enabled,
+            "seed": int(cfg.SEED),
+            "shots": int(cfg.DATASET.NUM_SHOTS),
+            "core_initialization_fingerprint": base_fingerprint,
+            "core_parameters": base_entries,
+            "parameter_counts": self._parameter_count_manifest(),
+        }
+        if self.confusion_enabled:
+            manifest.update(
+                bank_fingerprint=self.bank_metadata["bank_fingerprint"],
+                pair_description_fingerprint=self.pair_description_metadata[
                     "description_fingerprint"
                 ],
-                "pair_feature_fingerprint": self.pair_description_metadata[
+                pair_feature_fingerprint=self.pair_description_metadata[
                     "feature_fingerprint"
                 ],
-                "pair_description_file": self.pair_description_metadata["source_file"],
-                "pair_description_count": self.pair_description_metadata[
+                pair_description_file=self.pair_description_metadata["source_file"],
+                pair_description_count=self.pair_description_metadata[
                     "description_count"
                 ],
-                "parameter_counts": self._parameter_count_manifest(),
-            },
-        )
+            )
+        _json_write(Path(cfg.OUTPUT_DIR) / "initialization_manifest.json", manifest)
         if torch.cuda.device_count() > 1:
             print("Multiple GPUs detected, using DataParallel")
             self.model = nn.DataParallel(self.model)
@@ -302,7 +314,11 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for name, parameter in model.text_encoder.tcp_prompt.named_parameters()
                 if not name.startswith("text_prompt.") and parameter.requires_grad
             ],
-            "confusion_aware": list(model.confusion_adapter.parameters()),
+            "confusion_aware": (
+                list(model.confusion_adapter.parameters())
+                if self.confusion_enabled
+                else []
+            ),
         }
         counts = {
             name: sum(parameter.numel() for parameter in parameters)
@@ -336,10 +352,11 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for name, _ in self.model.text_encoder.tcp_prompt.named_parameters()
                 if not name.startswith("text_prompt.")
             )
-        expected.update(
-            "confusion_adapter.{}".format(name)
-            for name, _ in self.model.confusion_adapter.named_parameters()
-        )
+        if self.confusion_enabled:
+            expected.update(
+                "confusion_adapter.{}".format(name)
+                for name, _ in self.model.confusion_adapter.named_parameters()
+            )
         if set(trainable) != expected:
             raise RuntimeError(
                 "Unexpected trainable parameters: expected {}, got {}".format(
@@ -363,7 +380,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             model.image_encoder.visual_prompt,
             model.text_encoder.tcp_prompt,
         ]
-        modules.append(model.confusion_adapter)
+        if self.confusion_enabled:
+            modules.append(model.confusion_adapter)
         if mode == "train":
             for module in modules:
                 module.train()
@@ -385,12 +403,15 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             print("Peak CUDA memory allocated: {:.2f} MiB".format(peak_mib))
 
     def before_epoch(self):
-        self._train_pair_counts.zero_()
-        self._train_alpha_sum.zero_()
-        self._train_alpha_count = 0
+        if self.confusion_enabled:
+            self._train_pair_counts.zero_()
+            self._train_alpha_sum.zero_()
+            self._train_alpha_count = 0
 
     def after_epoch(self):
         super().after_epoch()
+        if not self.confusion_enabled:
+            return
         summary = {
             "epoch": int(self.epoch + 1),
             "pair_counts": self._train_pair_counts.tolist(),
@@ -422,19 +443,26 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             self._audit_gradients_once()
             self.optim.step()
 
-        self._accumulate_training_details(details)
+        if self.confusion_enabled:
+            self._accumulate_training_details(details)
         summary = {name: value.item() for name, value in losses.items()}
         summary.update(
             acc=compute_accuracy(output, label)[0].item(),
             lr=self.optim.param_groups[0]["lr"],
         )
-        summary["alpha_global"] = details["alpha_global"].mean().item()
-        summary["alpha_local"] = details["alpha_local"].mean().item()
+        if self.confusion_enabled:
+            summary["alpha_global"] = details["alpha_global"].mean().item()
+            summary["alpha_local"] = details["alpha_local"].mean().item()
         if (self.batch_idx + 1) == self.num_batches:
             self.update_lr()
         return summary
 
     def _compute_training_loss(self, image, label):
+        if not self.confusion_enabled:
+            output = self.model(image)
+            loss_ce = F.cross_entropy(output, label)
+            return output, {"loss": loss_ce, "loss_ce": loss_ce}, None
+
         output, details, _base_logits = self.model(
             image,
             return_confusion_details=True,
@@ -481,7 +509,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for name, parameter in model.text_encoder.tcp_prompt.named_parameters()
                 if not name.startswith("text_prompt.")
             ]
-        branches["ConfusionAware"] = list(model.confusion_adapter.parameters())
+        if self.confusion_enabled:
+            branches["ConfusionAware"] = list(model.confusion_adapter.parameters())
         norms = {}
         for name, parameters in branches.items():
             norm = sum(
@@ -516,36 +545,51 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             else self.test_loader
         )
         print("Do evaluation on {} set".format(split))
-        records = []
+        records = [] if self.confusion_enabled else None
         for batch in tqdm(data_loader):
             inputs, labels = self.parse_batch_test(batch)
-            output, details, _base_logits = self.model(
-                inputs, return_confusion_details=True
-            )
-            self.evaluator.process(output, labels)
-            for index, impath in enumerate(batch["impath"]):
-                records.append(
-                    {
-                        "image_path": str(impath),
-                        "true_label": int(labels[index].item()),
-                        "pair_first": int(details["pair_first"][index].item()),
-                        "pair_second": int(details["pair_second"][index].item()),
-                        "selected_prior": float(details["selected_prior"][index].item()),
-                        "selected_score": float(details["selected_score"][index].item()),
-                        "alpha_global": float(details["alpha_global"][index].item()),
-                        "alpha_local": float(details["alpha_local"][index].item()),
-                    }
+            if self.confusion_enabled:
+                output, details, _base_logits = self.model(
+                    inputs, return_confusion_details=True
                 )
+            else:
+                output = self.model(inputs)
+            self.evaluator.process(output, labels)
+            if self.confusion_enabled:
+                for index, impath in enumerate(batch["impath"]):
+                    records.append(
+                        {
+                            "image_path": str(impath),
+                            "true_label": int(labels[index].item()),
+                            "pair_first": int(details["pair_first"][index].item()),
+                            "pair_second": int(details["pair_second"][index].item()),
+                            "selected_prior": float(
+                                details["selected_prior"][index].item()
+                            ),
+                            "selected_score": float(
+                                details["selected_score"][index].item()
+                            ),
+                            "alpha_global": float(
+                                details["alpha_global"][index].item()
+                            ),
+                            "alpha_local": float(
+                                details["alpha_local"][index].item()
+                            ),
+                        }
+                    )
 
         results = self.evaluator.evaluate()
         self.last_eval_results = results
         for key, value in results.items():
             self.write_scalar("{}/{}".format(split, key), value, self.epoch)
-        tag = "{}_epoch_{:03d}".format(split, self.epoch + 1)
-        path = Path(self.output_dir) / "confusion_analysis" / "{}.json.gz".format(tag)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with gzip.open(path, "wt", encoding="utf-8") as stream:
-            json.dump(records, stream)
+        if self.confusion_enabled:
+            tag = "{}_epoch_{:03d}".format(split, self.epoch + 1)
+            path = (
+                Path(self.output_dir) / "confusion_analysis" / "{}.json.gz".format(tag)
+            )
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with gzip.open(path, "wt", encoding="utf-8") as stream:
+                json.dump(records, stream)
         best_metric = self.cfg.TEST.BEST_METRIC
         if best_metric not in results:
             raise KeyError("Validation metric {!r} is unavailable".format(best_metric))
@@ -559,11 +603,18 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "scheduler": self.sched.state_dict() if self.sched is not None else None,
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
             "tcp_enabled": self.tcp_enabled,
-            "bank_fingerprint": self.bank_metadata["bank_fingerprint"],
-            "pair_feature_fingerprint": self.pair_description_metadata[
-                "feature_fingerprint"
-            ],
-            "protocol": PROTOCOL,
+            "confusion_enabled": self.confusion_enabled,
+            "bank_fingerprint": (
+                self.bank_metadata["bank_fingerprint"]
+                if self.confusion_enabled
+                else None
+            ),
+            "pair_feature_fingerprint": (
+                self.pair_description_metadata["feature_fingerprint"]
+                if self.confusion_enabled
+                else None
+            ),
+            "protocol": self.protocol,
         }
         save_checkpoint(
             state,
@@ -590,20 +641,23 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         return start_epoch
 
     def _validate_checkpoint_metadata(self, checkpoint):
-        if checkpoint.get("protocol") != PROTOCOL:
+        if checkpoint.get("protocol") != self.protocol:
             raise RuntimeError("Checkpoint training protocol does not match current run")
         if bool(checkpoint.get("tcp_enabled", True)) != self.tcp_enabled:
             raise RuntimeError("Checkpoint TCP setting does not match current run")
-        expected_bank = self.bank_metadata["bank_fingerprint"]
-        if checkpoint.get("bank_fingerprint") != expected_bank:
-            raise RuntimeError("Checkpoint Bank fingerprint does not match current run")
-        expected_pair_features = self.pair_description_metadata[
-            "feature_fingerprint"
-        ]
-        if checkpoint.get("pair_feature_fingerprint") != expected_pair_features:
-            raise RuntimeError(
-                "Checkpoint LLM pair features do not match current run"
-            )
+        if bool(checkpoint.get("confusion_enabled", True)) != self.confusion_enabled:
+            raise RuntimeError("Checkpoint Confusion setting does not match current run")
+        if self.confusion_enabled:
+            expected_bank = self.bank_metadata["bank_fingerprint"]
+            if checkpoint.get("bank_fingerprint") != expected_bank:
+                raise RuntimeError("Checkpoint Bank fingerprint does not match current run")
+            expected_pair_features = self.pair_description_metadata[
+                "feature_fingerprint"
+            ]
+            if checkpoint.get("pair_feature_fingerprint") != expected_pair_features:
+                raise RuntimeError(
+                    "Checkpoint LLM pair features do not match current run"
+                )
         validate_tcp_checkpoint_state(
             checkpoint["state_dict"],
             self._unwrapped_model().text_encoder.tcp_prompt,

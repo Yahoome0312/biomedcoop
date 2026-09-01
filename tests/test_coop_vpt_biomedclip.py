@@ -117,6 +117,33 @@ def test_full_confusion_requires_bank_root():
         trainer.check_cfg(cfg)
 
 
+@pytest.mark.parametrize("tcp_enabled", [False, True])
+def test_confusion_off_does_not_require_bank_root(tcp_enabled):
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    cfg = _tcp_ablation_cfg(tcp_enabled)
+    cfg.TRAINER.CONFUSION_AWARE.ENABLED = False
+    cfg.TRAINER.CONFUSION_AWARE.BANK_ROOT = ""
+
+    trainer.check_cfg(cfg)
+
+
+def test_confusion_off_uses_only_cross_entropy():
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.confusion_enabled = False
+    trainer.model = lambda image: image
+    logits = torch.tensor([[2.0, -1.0], [-0.5, 1.5]], requires_grad=True)
+    labels = torch.tensor([0, 1])
+
+    output, losses, details = trainer._compute_training_loss(logits, labels)
+
+    expected = torch.nn.functional.cross_entropy(logits, labels)
+    assert output is logits
+    assert set(losses) == {"loss", "loss_ce"}
+    assert torch.equal(losses["loss"], expected)
+    assert torch.equal(losses["loss_ce"], expected)
+    assert details is None
+
+
 @pytest.mark.skipif(
     os.environ.get("RUN_BIOMEDCLIP_INTEGRATION") != "1",
     reason="Set RUN_BIOMEDCLIP_INTEGRATION=1 to load cached BiomedCLIP weights",
