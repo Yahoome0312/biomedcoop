@@ -1,5 +1,5 @@
 # ------ root_path/dataset_name ------
-root_path: '/mnt/data/' # '/mnt/data/' #Set the datasets path here
+root_path: '/mnt/nas1/disk09/yuejianwu/biomedcoop/data' # Set the datasets path here
 output_dir: './results'
 
 # ------ Basic Config ------

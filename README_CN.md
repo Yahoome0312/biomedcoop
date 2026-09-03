@@ -21,7 +21,7 @@ pip install -e ./Dassl.pytorch
 
 ```bash
 python scripts/coopvpt/build_confusion_prior.py \
-  --data-root /mnt/nas1/disk09/yuejianwu/data \
+  --data-root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
   --output-root output/soft_confusion_banks \
   --shots 4
 ```
@@ -30,7 +30,7 @@ python scripts/coopvpt/build_confusion_prior.py \
 
 ```bash
 python train.py \
-  --root /mnt/nas1/disk09/yuejianwu/data \
+  --root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
   --output-dir output/full_confusion/tcp_on/shots_4/seed1 \
   --seed 1 \
   --trainer CoOpVPT_BiomedCLIP \
@@ -55,7 +55,7 @@ TRAINER.TCP.ENABLED False
 
 ```bash
 python train.py \
-  --root /mnt/nas1/disk09/yuejianwu/data \
+  --root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
   --output-dir output/tcp_ablation/without_tcp/shots_4/seed1 \
   --seed 1 \
   --trainer CoOpVPT_BiomedCLIP \
@@ -94,7 +94,7 @@ TRAINER.CONFUSION_AWARE.ENABLED False
 旧的批量启动文件已删除。需要批量实验时，直接在服务器 Bash 中循环调用 `train.py`：
 
 ```bash
-DATA_ROOT=/mnt/nas1/disk09/yuejianwu/data
+DATA_ROOT=/mnt/nas1/disk09/yuejianwu/biomedcoop/data
 OUTPUT_ROOT=output/full_confusion/tcp_on
 TRAINER=CoOpVPT_BiomedCLIP
 TRAINER_CONFIG=configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml
@@ -131,7 +131,7 @@ done
 
 ```bash
 python scripts/coopvpt/build_confusion_prior.py \
-  --data-root /mnt/nas1/disk09/yuejianwu/data \
+  --data-root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
   --output-root output/soft_confusion_banks \
   --shots 1 2 4 8 16 32
 ```
