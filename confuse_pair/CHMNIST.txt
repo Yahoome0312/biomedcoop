@@ -1,184 +1,242 @@
 {
-"actinic keratosis": {
-"basal cell carcinoma": [
-"Compared with actinic keratosis, basal cell carcinoma differs in showing a smoother pearly or translucent surface with prominent arborizing vessels rather than diffuse scale.",
-"Compared with actinic keratosis, basal cell carcinoma differs in displaying blue-gray ovoid structures or focal ulceration instead of a scaly erythematous follicular pattern."
+"adipose tissue": {
+"complex stroma": [
+"Compared with adipose tissue, complex stroma differs in showing dense fibrous tissue with irregular collagen bundles instead of large clear fat vacuoles.",
+"Compared with adipose tissue, complex stroma differs in having greater cellularity and heterogeneous eosinophilic extracellular matrix."
 ],
-"benign keratosis": [
-"Compared with actinic keratosis, benign keratosis differs in showing sharply demarcated waxy or keratotic plaques with a more stuck-on appearance.",
-"Compared with actinic keratosis, benign keratosis differs in displaying milia-like cysts, comedo-like openings, or fissures and ridges rather than a strawberry-like follicular pattern."
+"debris": [
+"Compared with adipose tissue, debris differs in appearing as amorphous granular material without organized round adipocyte spaces.",
+"Compared with adipose tissue, debris differs in showing fragmented eosinophilic and basophilic remnants rather than uniform clear vacuoles."
 ],
-"dermatofibroma": [
-"Compared with actinic keratosis, dermatofibroma differs in showing a central white scar-like area surrounded by a delicate peripheral pigment network.",
-"Compared with actinic keratosis, dermatofibroma differs in having a more compact symmetric pigmented pattern with less prominent surface scale."
+"empty background": [
+"Compared with adipose tissue, empty background differs in lacking cellular outlines and the honeycomb pattern of adipocytes.",
+"Compared with adipose tissue, empty background differs in appearing nearly featureless and uniformly pale or white."
 ],
-"melanoma": [
-"Compared with actinic keratosis, melanoma differs in showing greater asymmetry, irregular borders, and marked variation in pigmentation.",
-"Compared with actinic keratosis, melanoma differs in displaying atypical pigment networks, irregular dots or globules, and blue-white structures rather than predominantly erythematous scale."
+"immune cells": [
+"Compared with adipose tissue, immune cells differ in forming dense collections of small dark nuclei rather than large clear vacuolated cells.",
+"Compared with adipose tissue, immune cells differ in having a high nuclear-to-cytoplasmic visual ratio and little visible extracellular space."
 ],
-"melanocytic nevus": [
-"Compared with actinic keratosis, melanocytic nevus differs in showing a more symmetric and regularly distributed brown pigment network or globular pattern.",
-"Compared with actinic keratosis, melanocytic nevus differs in having smoother, more uniform pigmentation with little or no conspicuous keratotic scale."
+"normal mucosal glands": [
+"Compared with adipose tissue, normal mucosal glands differ in forming organized epithelial crypts with visible luminal spaces.",
+"Compared with adipose tissue, normal mucosal glands differ in showing tightly arranged columnar cells rather than large clear polygonal adipocytes."
 ],
-"vascular lesion": [
-"Compared with actinic keratosis, vascular lesion differs in showing predominantly red, blue, or purple coloration organized into homogeneous areas or lacunae.",
-"Compared with actinic keratosis, vascular lesion differs in displaying clustered vascular spaces separated by pale septa rather than white-yellow scale and follicular keratosis."
+"simple stroma": [
+"Compared with adipose tissue, simple stroma differs in showing pale fibrous matrix with scattered spindle-shaped nuclei instead of clear fat vacuoles.",
+"Compared with adipose tissue, simple stroma differs in lacking the regular honeycomb architecture produced by adipocyte membranes."
+],
+"tumour epithelium": [
+"Compared with adipose tissue, tumour epithelium differs in showing densely packed epithelial cells with prominent dark nuclei instead of large clear vacuoles.",
+"Compared with adipose tissue, tumour epithelium differs in forming irregular cellular nests or glands with markedly greater nuclear density."
 ]
 },
-"basal cell carcinoma": {
-"actinic keratosis": [
-"Compared with basal cell carcinoma, actinic keratosis differs in showing a rough scaly erythematous surface rather than a smooth pearly or translucent appearance.",
-"Compared with basal cell carcinoma, actinic keratosis differs in displaying white-yellow scale and prominent follicular openings instead of arborizing vessels or blue-gray ovoid structures."
+"complex stroma": {
+"adipose tissue": [
+"Compared with complex stroma, adipose tissue differs in showing large clear vacuolated cells arranged in a honeycomb pattern rather than dense fibrous matrix.",
+"Compared with complex stroma, adipose tissue differs in having sparse peripheral nuclei and much less eosinophilic extracellular material."
 ],
-"benign keratosis": [
-"Compared with basal cell carcinoma, benign keratosis differs in showing a more sharply demarcated waxy or keratotic surface with a stuck-on appearance.",
-"Compared with basal cell carcinoma, benign keratosis differs in displaying milia-like cysts, comedo-like openings, and fissures or ridges rather than arborizing vessels."
+"debris": [
+"Compared with complex stroma, debris differs in appearing disorganized and granular without coherent collagen bundles or spindle-cell architecture.",
+"Compared with complex stroma, debris differs in containing fragmented staining material with poorly defined tissue structure."
 ],
-"dermatofibroma": [
-"Compared with basal cell carcinoma, dermatofibroma differs in showing a central white scar-like patch with a peripheral delicate pigment network.",
-"Compared with basal cell carcinoma, dermatofibroma differs in lacking the characteristic pearly translucency, arborizing vessels, and blue-gray ovoid structures."
+"empty background": [
+"Compared with complex stroma, empty background differs in being nearly featureless and lacking fibrous matrix, nuclei, and tissue texture.",
+"Compared with complex stroma, empty background differs in showing broad uniform pale areas instead of heterogeneous collagen-rich tissue."
 ],
-"melanoma": [
-"Compared with basal cell carcinoma, melanoma differs in showing stronger pigment asymmetry, irregular borders, and broader variation of brown, black, gray, or blue tones.",
-"Compared with basal cell carcinoma, melanoma differs in displaying atypical pigment networks and irregular dots or globules rather than predominantly arborizing vessels and pearly structureless areas."
+"immune cells": [
+"Compared with complex stroma, immune cells differ in showing compact clusters of small round dark nuclei rather than elongated stromal nuclei within collagen.",
+"Compared with complex stroma, immune cells differ in having less visible fibrous extracellular matrix and greater nuclear crowding."
 ],
-"melanocytic nevus": [
-"Compared with basal cell carcinoma, melanocytic nevus differs in showing a symmetric regular pigment network, globules, or homogeneous brown coloration.",
-"Compared with basal cell carcinoma, melanocytic nevus differs in lacking prominent arborizing vessels, ulcerated areas, and blue-gray ovoid nests."
+"normal mucosal glands": [
+"Compared with complex stroma, normal mucosal glands differs in forming regularly shaped epithelial crypts with clear lumina rather than irregular fibrous tissue.",
+"Compared with complex stroma, normal mucosal glands differs in showing cohesive columnar epithelial lining and more orderly architecture."
 ],
-"vascular lesion": [
-"Compared with basal cell carcinoma, vascular lesion differs in showing more uniform red, blue, or purple vascular coloration with discrete lacunae.",
-"Compared with basal cell carcinoma, vascular lesion differs in displaying rounded vascular spaces rather than branching arborizing vessels, pearly areas, or blue-gray nests."
+"simple stroma": [
+"Compared with complex stroma, simple stroma differs in having a more uniform pale matrix with fewer cells and less architectural heterogeneity.",
+"Compared with complex stroma, simple stroma differs in showing thinner, less tangled fibrous structures and more evenly scattered spindle nuclei."
+],
+"tumour epithelium": [
+"Compared with complex stroma, tumour epithelium differs in showing cohesive densely cellular epithelial nests or irregular glands instead of collagen-rich matrix.",
+"Compared with complex stroma, tumour epithelium differs in having closely packed atypical-appearing nuclei and reduced extracellular fibrous space."
 ]
 },
-"benign keratosis": {
-"actinic keratosis": [
-"Compared with benign keratosis, actinic keratosis differs in showing a more diffuse erythematous scaly surface with conspicuous follicular openings.",
-"Compared with benign keratosis, actinic keratosis differs in displaying a strawberry-like red pseudonetwork and white-yellow scale rather than milia-like cysts or comedo-like openings."
+"debris": {
+"adipose tissue": [
+"Compared with debris, adipose tissue differs in showing organized large clear vacuoles with thin cellular borders rather than amorphous fragments.",
+"Compared with debris, adipose tissue differs in having a repetitive honeycomb architecture and sparse peripheral nuclei."
 ],
-"basal cell carcinoma": [
-"Compared with benign keratosis, basal cell carcinoma differs in showing a smoother pearly or translucent surface with branching arborizing vessels.",
-"Compared with benign keratosis, basal cell carcinoma differs in displaying blue-gray ovoid structures or focal ulceration instead of fissures, ridges, and keratin-filled openings."
+"complex stroma": [
+"Compared with debris, complex stroma differs in showing structured collagen bundles with identifiable spindle-shaped nuclei rather than granular remnants.",
+"Compared with debris, complex stroma differs in having coherent fibrous architecture and greater organized cellularity."
 ],
-"dermatofibroma": [
-"Compared with benign keratosis, dermatofibroma differs in showing a central white scar-like area with a fine peripheral pigment network.",
-"Compared with benign keratosis, dermatofibroma differs in having fewer keratin-related structures such as milia-like cysts, comedo-like openings, and cerebriform fissures."
+"empty background": [
+"Compared with debris, empty background differs in lacking granular, fragmented, or variably stained material.",
+"Compared with debris, empty background differs in appearing uniformly pale and nearly textureless."
 ],
-"melanoma": [
-"Compared with benign keratosis, melanoma differs in showing greater asymmetry, irregular borders, and less orderly distribution of pigmentation.",
-"Compared with benign keratosis, melanoma differs in displaying atypical networks, irregular dots or globules, and blue-white structures rather than predominantly keratin-related cysts and openings."
+"immune cells": [
+"Compared with debris, immune cells differs in showing numerous intact small round dark nuclei rather than irregular fragmented material.",
+"Compared with debris, immune cells differs in forming recognizable cellular aggregates with sharply defined nuclear profiles."
 ],
-"melanocytic nevus": [
-"Compared with benign keratosis, melanocytic nevus differs in showing a regular symmetric pigment network or orderly globular pattern.",
-"Compared with benign keratosis, melanocytic nevus differs in having smoother pigmentation without prominent milia-like cysts, comedo-like openings, or fissured keratotic ridges."
+"normal mucosal glands": [
+"Compared with debris, normal mucosal glands differs in showing intact organized crypts lined by cohesive epithelial cells.",
+"Compared with debris, normal mucosal glands differs in containing well-defined lumina and repetitive glandular architecture rather than amorphous material."
 ],
-"vascular lesion": [
-"Compared with benign keratosis, vascular lesion differs in showing predominantly red, blue, or purple coloration rather than brown or tan keratotic pigmentation.",
-"Compared with benign keratosis, vascular lesion differs in displaying discrete vascular lacunae and pale septa instead of milia-like cysts, comedo-like openings, and surface fissures."
+"simple stroma": [
+"Compared with debris, simple stroma differs in showing continuous pale extracellular matrix with scattered spindle nuclei.",
+"Compared with debris, simple stroma differs in having smooth fibrous texture and coherent tissue organization rather than fragmented remnants."
+],
+"tumour epithelium": [
+"Compared with debris, tumour epithelium differs in showing intact densely packed epithelial cells forming irregular nests or glands.",
+"Compared with debris, tumour epithelium differs in having numerous recognizable nuclei and cohesive cellular architecture rather than amorphous fragments."
 ]
 },
-"dermatofibroma": {
-"actinic keratosis": [
-"Compared with dermatofibroma, actinic keratosis differs in showing more prominent white-yellow surface scale and diffuse erythema.",
-"Compared with dermatofibroma, actinic keratosis differs in displaying a follicular strawberry-like pattern rather than a central white scar-like patch with peripheral pigment network."
+"empty background": {
+"adipose tissue": [
+"Compared with empty background, adipose tissue differs in showing repeated large clear cellular spaces bounded by thin membranes.",
+"Compared with empty background, adipose tissue differs in containing visible peripheral nuclei and an organized honeycomb texture."
 ],
-"basal cell carcinoma": [
-"Compared with dermatofibroma, basal cell carcinoma differs in showing pearly translucent structureless areas and prominent arborizing vessels.",
-"Compared with dermatofibroma, basal cell carcinoma differs in displaying blue-gray ovoid structures or ulcerated foci rather than a central white scar-like area and delicate peripheral network."
+"complex stroma": [
+"Compared with empty background, complex stroma differs in containing dense eosinophilic fibrous matrix with scattered or clustered nuclei.",
+"Compared with empty background, complex stroma differs in showing irregular collagen texture and substantial tissue content."
 ],
-"benign keratosis": [
-"Compared with dermatofibroma, benign keratosis differs in showing a more waxy, keratotic, sharply demarcated surface with a stuck-on appearance.",
-"Compared with dermatofibroma, benign keratosis differs in displaying milia-like cysts, comedo-like openings, and fissures or ridges instead of a central white scar-like pattern."
+"debris": [
+"Compared with empty background, debris differs in containing granular, fragmented, variably stained material rather than featureless pale space.",
+"Compared with empty background, debris differs in showing irregular particulate texture and scattered dark remnants."
 ],
-"melanoma": [
-"Compared with dermatofibroma, melanoma differs in showing greater asymmetry, border irregularity, and heterogeneous pigmentation.",
-"Compared with dermatofibroma, melanoma differs in displaying atypical networks, irregular dots or globules, and blue-white structures rather than a relatively symmetric central white area with peripheral network."
+"immune cells": [
+"Compared with empty background, immune cells differs in showing numerous small intensely basophilic nuclei arranged in clusters.",
+"Compared with empty background, immune cells differs in having high cellular density and pronounced dark punctate texture."
 ],
-"melanocytic nevus": [
-"Compared with dermatofibroma, melanocytic nevus differs in showing a more uniformly distributed symmetric pigment network or globular architecture.",
-"Compared with dermatofibroma, melanocytic nevus differs in lacking the characteristic central white scar-like patch surrounded by a delicate peripheral network."
+"normal mucosal glands": [
+"Compared with empty background, normal mucosal glands differs in showing organized epithelial crypts with nuclei and clearly bounded lumina.",
+"Compared with empty background, normal mucosal glands differs in having complex repetitive tissue architecture rather than uniform blank space."
 ],
-"vascular lesion": [
-"Compared with dermatofibroma, vascular lesion differs in showing predominantly red, blue, or purple coloration with discrete vascular lacunae.",
-"Compared with dermatofibroma, vascular lesion differs in displaying clustered vascular spaces separated by pale septa rather than a central white scar-like patch and peripheral pigment network."
+"simple stroma": [
+"Compared with empty background, simple stroma differs in containing pale fibrous matrix with scattered spindle-shaped nuclei.",
+"Compared with empty background, simple stroma differs in showing subtle collagen texture and identifiable tissue structure."
+],
+"tumour epithelium": [
+"Compared with empty background, tumour epithelium differs in showing dense sheets, nests, or irregular glands of nucleated epithelial cells.",
+"Compared with empty background, tumour epithelium differs in having strong basophilic nuclear texture and extensive cellular architecture."
 ]
 },
-"melanoma": {
-"actinic keratosis": [
-"Compared with melanoma, actinic keratosis differs in showing more superficial white-yellow scale and diffuse erythema with less complex pigmentation.",
-"Compared with melanoma, actinic keratosis differs in displaying a relatively repetitive follicular strawberry-like pattern rather than an asymmetric atypical pigment network with irregular dots or globules."
+"immune cells": {
+"adipose tissue": [
+"Compared with immune cells, adipose tissue differs in showing large clear vacuolated cells with sparse peripheral nuclei rather than dense small nuclei.",
+"Compared with immune cells, adipose tissue differs in having a spacious honeycomb pattern and markedly lower nuclear density."
 ],
-"basal cell carcinoma": [
-"Compared with melanoma, basal cell carcinoma differs in showing more characteristic pearly translucent areas and arborizing vessels.",
-"Compared with melanoma, basal cell carcinoma differs in displaying blue-gray ovoid structures and focal ulceration with less prominent atypical pigment-network architecture."
+"complex stroma": [
+"Compared with immune cells, complex stroma differs in showing abundant fibrous extracellular matrix with elongated spindle nuclei rather than compact round nuclear clusters.",
+"Compared with immune cells, complex stroma differs in having more eosinophilic collagen and less uniform nuclear crowding."
 ],
-"benign keratosis": [
-"Compared with melanoma, benign keratosis differs in showing a more sharply demarcated waxy or keratotic surface with relatively orderly architecture.",
-"Compared with melanoma, benign keratosis differs in displaying milia-like cysts, comedo-like openings, and fissures or ridges rather than atypical networks and irregular pigment structures."
+"debris": [
+"Compared with immune cells, debris differs in appearing amorphous and fragmented rather than containing numerous intact round nuclei.",
+"Compared with immune cells, debris differs in lacking cohesive cellular clusters and sharply defined nuclear boundaries."
 ],
-"dermatofibroma": [
-"Compared with melanoma, dermatofibroma differs in showing a more symmetric central white scar-like area surrounded by a delicate peripheral pigment network.",
-"Compared with melanoma, dermatofibroma differs in having less color variegation and fewer irregular dots, globules, streaks, or blue-white structures."
+"empty background": [
+"Compared with immune cells, empty background differs in lacking dark nuclei and showing nearly uniform pale or white areas.",
+"Compared with immune cells, empty background differs in having minimal texture and essentially no cellular density."
 ],
-"melanocytic nevus": [
-"Compared with melanoma, melanocytic nevus differs in showing greater symmetry and a more regular, evenly distributed pigment network or globular pattern.",
-"Compared with melanoma, melanocytic nevus differs in having more uniform coloration and fewer atypical dots, irregular globules, streaks, or blue-white structures."
+"normal mucosal glands": [
+"Compared with immune cells, normal mucosal glands differs in forming organized epithelial crypts with columnar cells and distinct lumina.",
+"Compared with immune cells, normal mucosal glands differs in showing larger cohesive epithelial structures rather than dispersed small round cells."
 ],
-"vascular lesion": [
-"Compared with melanoma, vascular lesion differs in showing predominantly red, blue, or purple vascular coloration arranged into well-defined lacunae.",
-"Compared with melanoma, vascular lesion differs in displaying clustered vascular spaces with pale septa rather than an atypical pigment network, irregular dots, and multicolored melanocytic structures."
+"simple stroma": [
+"Compared with immune cells, simple stroma differs in showing pale fibrous matrix with sparsely distributed elongated nuclei.",
+"Compared with immune cells, simple stroma differs in having much lower nuclear density and more visible extracellular space."
+],
+"tumour epithelium": [
+"Compared with immune cells, tumour epithelium differs in showing larger cohesive epithelial cells arranged in irregular nests or glands.",
+"Compared with immune cells, tumour epithelium differs in having broader cytoplasmic profiles and more complex epithelial architecture around larger nuclei."
 ]
 },
-"melanocytic nevus": {
-"actinic keratosis": [
-"Compared with melanocytic nevus, actinic keratosis differs in showing a rougher erythematous surface with prominent white-yellow scale.",
-"Compared with melanocytic nevus, actinic keratosis differs in displaying a follicular strawberry-like pseudonetwork rather than a regular symmetric pigment network or globular pattern."
+"normal mucosal glands": {
+"adipose tissue": [
+"Compared with normal mucosal glands, adipose tissue differs in showing large clear vacuolated cells rather than epithelial crypts with lumina.",
+"Compared with normal mucosal glands, adipose tissue differs in lacking tightly packed columnar nuclei and organized glandular walls."
 ],
-"basal cell carcinoma": [
-"Compared with melanocytic nevus, basal cell carcinoma differs in showing pearly translucent areas with arborizing vessels rather than an orderly melanocytic network.",
-"Compared with melanocytic nevus, basal cell carcinoma differs in displaying blue-gray ovoid structures or focal ulceration instead of uniformly distributed brown pigment or regular globules."
+"complex stroma": [
+"Compared with normal mucosal glands, complex stroma differs in showing irregular collagen-rich matrix with spindle-shaped cells rather than cohesive epithelial crypts.",
+"Compared with normal mucosal glands, complex stroma differs in lacking regular glandular lumina and orderly epithelial alignment."
 ],
-"benign keratosis": [
-"Compared with melanocytic nevus, benign keratosis differs in showing a more waxy or keratotic surface with sharply demarcated, stuck-on architecture.",
-"Compared with melanocytic nevus, benign keratosis differs in displaying milia-like cysts, comedo-like openings, and fissures or ridges rather than a regular pigment network."
+"debris": [
+"Compared with normal mucosal glands, debris differs in appearing fragmented and amorphous rather than forming intact epithelial-lined crypts.",
+"Compared with normal mucosal glands, debris differs in lacking regular lumina, cohesive cell borders, and repetitive glandular organization."
 ],
-"dermatofibroma": [
-"Compared with melanocytic nevus, dermatofibroma differs in showing a central white scar-like patch with pigmentation concentrated more peripherally.",
-"Compared with melanocytic nevus, dermatofibroma differs in displaying a delicate peripheral network surrounding a pale center rather than a more uniformly distributed network or globules."
+"empty background": [
+"Compared with normal mucosal glands, empty background differs in lacking epithelial cells, nuclei, crypt walls, and glandular lumina.",
+"Compared with normal mucosal glands, empty background differs in appearing uniformly pale and structurally featureless."
 ],
-"melanoma": [
-"Compared with melanocytic nevus, melanoma differs in showing greater asymmetry, more irregular borders, and stronger color variegation.",
-"Compared with melanocytic nevus, melanoma differs in displaying atypical pigment networks, irregular dots or globules, streaks, and blue-white structures instead of orderly symmetric patterns."
+"immune cells": [
+"Compared with normal mucosal glands, immune cells differs in showing small round dark nuclei in clusters rather than organized columnar epithelial linings.",
+"Compared with normal mucosal glands, immune cells differs in lacking well-defined glandular lumina and repetitive crypt architecture."
 ],
-"vascular lesion": [
-"Compared with melanocytic nevus, vascular lesion differs in showing predominantly red, blue, or purple coloration rather than a brown melanocytic pigment pattern.",
-"Compared with melanocytic nevus, vascular lesion differs in displaying rounded vascular lacunae separated by pale septa instead of a regular pigment network or globules."
+"simple stroma": [
+"Compared with normal mucosal glands, simple stroma differs in showing pale fibrous matrix with scattered spindle nuclei instead of epithelial-lined glands.",
+"Compared with normal mucosal glands, simple stroma differs in lacking regular luminal structures and densely aligned epithelial cells."
+],
+"tumour epithelium": [
+"Compared with normal mucosal glands, tumour epithelium differs in showing more irregular, crowded epithelial arrangements with distorted glandular contours.",
+"Compared with normal mucosal glands, tumour epithelium differs in having less uniform nuclear spacing and less orderly lumen formation."
 ]
 },
-"vascular lesion": {
-"actinic keratosis": [
-"Compared with vascular lesion, actinic keratosis differs in showing erythematous skin with prominent white-yellow scale rather than discrete red, blue, or purple vascular lacunae.",
-"Compared with vascular lesion, actinic keratosis differs in displaying a follicular strawberry-like pseudonetwork instead of clustered vascular spaces separated by pale septa."
+"simple stroma": {
+"adipose tissue": [
+"Compared with simple stroma, adipose tissue differs in showing large clear vacuoles with thin borders rather than pale fibrous matrix.",
+"Compared with simple stroma, adipose tissue differs in having a repetitive honeycomb appearance and fewer visible spindle-shaped nuclei."
 ],
-"basal cell carcinoma": [
-"Compared with vascular lesion, basal cell carcinoma differs in showing pearly translucent areas with branching arborizing vessels rather than rounded vascular lacunae.",
-"Compared with vascular lesion, basal cell carcinoma differs in displaying blue-gray ovoid structures or focal ulceration instead of predominantly homogeneous red, blue, or purple vascular spaces."
+"complex stroma": [
+"Compared with simple stroma, complex stroma differs in showing denser, more irregular collagen with increased cellularity and architectural heterogeneity.",
+"Compared with simple stroma, complex stroma differs in having thicker tangled fibrous areas and more unevenly distributed nuclei."
 ],
-"benign keratosis": [
-"Compared with vascular lesion, benign keratosis differs in showing a waxy or keratotic brown-tan surface rather than predominantly red, blue, or purple vascular coloration.",
-"Compared with vascular lesion, benign keratosis differs in displaying milia-like cysts, comedo-like openings, and fissures or ridges instead of discrete vascular lacunae."
+"debris": [
+"Compared with simple stroma, debris differs in showing amorphous fragmented material rather than continuous pale fibrous matrix.",
+"Compared with simple stroma, debris differs in lacking orderly scattered spindle nuclei and coherent stromal texture."
 ],
-"dermatofibroma": [
-"Compared with vascular lesion, dermatofibroma differs in showing a central white scar-like area surrounded by a delicate peripheral pigment network.",
-"Compared with vascular lesion, dermatofibroma differs in lacking the dominant clustered red, blue, or purple lacunae and pale intervening septa."
+"empty background": [
+"Compared with simple stroma, empty background differs in lacking collagen texture and scattered spindle-shaped nuclei.",
+"Compared with simple stroma, empty background differs in appearing uniformly pale or white with essentially no tissue structure."
 ],
-"melanoma": [
-"Compared with vascular lesion, melanoma differs in showing asymmetric multicolored pigmentation with an atypical pigment network and irregular borders.",
-"Compared with vascular lesion, melanoma differs in displaying irregular dots, globules, streaks, or blue-white structures rather than predominantly rounded vascular lacunae."
+"immune cells": [
+"Compared with simple stroma, immune cells differs in showing dense collections of small round dark nuclei rather than sparse elongated nuclei.",
+"Compared with simple stroma, immune cells differs in having far less visible extracellular matrix and substantially greater nuclear crowding."
 ],
-"melanocytic nevus": [
-"Compared with vascular lesion, melanocytic nevus differs in showing symmetric brown pigmentation organized into a regular network, globules, or homogeneous pattern.",
-"Compared with vascular lesion, melanocytic nevus differs in lacking the dominant red, blue, or purple lacunar architecture separated by pale septa."
+"normal mucosal glands": [
+"Compared with simple stroma, normal mucosal glands differs in forming cohesive epithelial crypts with distinct lumina rather than diffuse fibrous tissue.",
+"Compared with simple stroma, normal mucosal glands differs in showing densely aligned columnar nuclei and repetitive glandular architecture."
+],
+"tumour epithelium": [
+"Compared with simple stroma, tumour epithelium differs in showing densely packed cohesive epithelial cells rather than sparse spindle cells in fibrous matrix.",
+"Compared with simple stroma, tumour epithelium differs in forming irregular nests or glands with much greater nuclear density."
+]
+},
+"tumour epithelium": {
+"adipose tissue": [
+"Compared with tumour epithelium, adipose tissue differs in showing large clear vacuolated cells with sparse peripheral nuclei rather than dense epithelial clusters.",
+"Compared with tumour epithelium, adipose tissue differs in having a regular honeycomb pattern and markedly less basophilic nuclear staining."
+],
+"complex stroma": [
+"Compared with tumour epithelium, complex stroma differs in showing collagen-rich extracellular matrix with spindle-shaped nuclei rather than cohesive epithelial nests.",
+"Compared with tumour epithelium, complex stroma differs in having more fibrous space and less densely packed round-to-oval nuclear architecture."
+],
+"debris": [
+"Compared with tumour epithelium, debris differs in appearing amorphous and fragmented rather than forming intact densely cellular epithelial structures.",
+"Compared with tumour epithelium, debris differs in lacking cohesive cell borders, recognizable glands, and numerous intact nuclei."
+],
+"empty background": [
+"Compared with tumour epithelium, empty background differs in lacking epithelial cells, nuclei, glandular contours, and tissue texture.",
+"Compared with tumour epithelium, empty background differs in appearing uniformly pale rather than densely cellular and strongly stained."
+],
+"immune cells": [
+"Compared with tumour epithelium, immune cells differs in showing smaller, more uniformly round dark nuclei with very little visible cytoplasm.",
+"Compared with tumour epithelium, immune cells differs in forming compact cellular aggregates without irregular epithelial nests or glandular structures."
+],
+"normal mucosal glands": [
+"Compared with tumour epithelium, normal mucosal glands differs in showing more regular crypt shapes, orderly epithelial alignment, and uniform lumina.",
+"Compared with tumour epithelium, normal mucosal glands differs in having more consistent nuclear spacing and less architectural distortion."
+],
+"simple stroma": [
+"Compared with tumour epithelium, simple stroma differs in showing pale extracellular matrix with sparse spindle-shaped nuclei rather than dense epithelial cells.",
+"Compared with tumour epithelium, simple stroma differs in lacking cohesive nests or glands and having substantially lower nuclear density."
 ]
 }
 }
