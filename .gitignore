@@ -4,9 +4,9 @@ output/
 output_eval/
 caches/
 assets/
+data/
 
 # Python runtime artefacts.
 __pycache__/
 *.py[cod]
 .pytest_cache/
-
