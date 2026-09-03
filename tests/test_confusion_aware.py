@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+from scripts.coopvpt import build_confusion_prior
 from models.confusion_aware import (
     ConfusionAwareAdapter,
     build_frozen_pair_description_bank,
@@ -58,6 +59,29 @@ def test_hard_count_is_diagnostic_only():
     hard = compute_hard_confusion_counts(probabilities, labels, 2)
     assert hard[0, 1].item() == 1
     assert prior[0, 1].item() == pytest.approx(0.375)
+
+
+def test_bank_builder_uses_requested_dataset_config(monkeypatch, tmp_path):
+    requested_config = tmp_path / "kvasir.yaml"
+    captured = {}
+
+    def _capture_setup_cfg(namespace):
+        captured["namespace"] = namespace
+        return namespace
+
+    monkeypatch.setattr(build_confusion_prior.train, "setup_cfg", _capture_setup_cfg)
+    args = SimpleNamespace(
+        data_root=tmp_path / "data",
+        output_root=tmp_path / "output",
+        dataset_config_file=requested_config,
+    )
+
+    cfg = build_confusion_prior._cfg(args, shots=4, seed=1)
+
+    assert cfg is captured["namespace"]
+    assert cfg.dataset_config_file == str(requested_config)
+    assert cfg.opts == ["DATASET.NUM_SHOTS", "4"]
+    assert cfg.seed == 1
 
 
 def test_llm_pair_bank_supports_dynamic_classes_and_description_counts(tmp_path):

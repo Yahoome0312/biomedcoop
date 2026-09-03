@@ -57,7 +57,7 @@ def _cfg(args, shots, seed):
             trainer="CoOpVPT_BiomedCLIP",
             backbone="",
             head="",
-            dataset_config_file=str(REPO / "configs/datasets/dermamnist.yaml"),
+            dataset_config_file=str(args.dataset_config_file),
             config_file=str(
                 REPO
                 / "configs/trainers/CoOp"
@@ -199,6 +199,7 @@ def build_one(args, shots, seed):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root",type=Path,default=Path("/mnt/nas1/disk09/yuejianwu/biomedcoop/data"),)
+    parser.add_argument("--dataset-config-file", type=Path, required=True)
     parser.add_argument(
         "--output-root", type=Path, default=REPO / "output" / "soft_confusion_banks"
     )

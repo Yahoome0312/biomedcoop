@@ -22,6 +22,7 @@ pip install -e ./Dassl.pytorch
 ```bash
 python scripts/coopvpt/build_confusion_prior.py \
   --data-root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
+  --dataset-config-file configs/datasets/dermamnist.yaml \
   --output-root output/soft_confusion_banks \
   --shots 4
 ```
@@ -132,13 +133,16 @@ done
 ```bash
 python scripts/coopvpt/build_confusion_prior.py \
   --data-root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
+  --dataset-config-file configs/datasets/dermamnist.yaml \
   --output-root output/soft_confusion_banks \
   --shots 1 2 4 8 16 32
 ```
 
+构建 Kvasir 或 CHMNIST 的 Soft Bank 时，分别将 `--dataset-config-file` 改为 `configs/datasets/kvasir.yaml` 或 `configs/datasets/chmnist.yaml`。每次调用只构建所指定数据集的 Bank。
+
 Soft Bank 路径已在 YAML 中固定为 `output/soft_confusion_banks`。训练阶段使用真实标签选择 Bank 行和困难负类；验证、测试阶段没有标签输入，使用基础 logits 的 top-1 选择 Bank 行。训练损失固定为交叉熵加 confusion margin loss。
 
-Semantic 特征来自 `confuse_pair/<数据集名称小写>.txt`。例如配置中的数据集名称为 `DermaMNIST`，对应文件为 `confuse_pair/dermamnist.txt`。文件必须是下面的 JSON 结构：
+Semantic 特征来自数据集对应的有向类别对文件：DermaMNIST、Kvasir 和 CHMNIST 分别使用 `confuse_pair/DermaMNIST.txt`、`confuse_pair/Kvasir.txt` 和 `confuse_pair/CHMNIST.txt`。文件必须是下面的 JSON 结构：
 
 ```json
 {

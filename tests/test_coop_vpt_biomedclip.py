@@ -9,7 +9,10 @@ from dassl.config import get_cfg_default
 from models.biomedclip_loader import load_biomedclip
 from models.vpt import TimmViTVisualPromptEncoder
 from train import extend_cfg
-from trainers.CoOp.coop_vpt_biomedclip import CoOpVPT_BiomedCLIP
+from trainers.CoOp.coop_vpt_biomedclip import (
+    CoOpVPT_BiomedCLIP,
+    _pair_description_file,
+)
 
 
 class _TinyTimmVisual(nn.Module):
@@ -142,6 +145,22 @@ def test_confusion_off_uses_only_cross_entropy():
     assert torch.equal(losses["loss"], expected)
     assert torch.equal(losses["loss_ce"], expected)
     assert details is None
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "filename"),
+    [
+        ("DermaMNIST", "DermaMNIST.txt"),
+        ("CHMNIST", "CHMNIST.txt"),
+        ("Kvasir", "Kvasir.txt"),
+    ],
+)
+def test_pair_description_file_matches_repository_filename(
+    dataset_name, filename
+):
+    path = _pair_description_file(dataset_name)
+    assert path.name == filename
+    assert path.is_file()
 
 
 @pytest.mark.skipif(

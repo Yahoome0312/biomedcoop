@@ -45,6 +45,17 @@ from trainers.prompt_templates import BIOMEDCOOP_TEMPLATES
 
 DESCRIPTION_COUNT = 50
 PAIR_DESCRIPTION_ROOT = Path(__file__).resolve().parents[2] / "confuse_pair"
+PAIR_DESCRIPTION_FILES = {
+    "DermaMNIST": "DermaMNIST.txt",
+    "CHMNIST": "CHMNIST.txt",
+    "Kvasir": "Kvasir.txt",
+}
+
+
+def _pair_description_file(dataset_name):
+    return PAIR_DESCRIPTION_ROOT / PAIR_DESCRIPTION_FILES[str(dataset_name)]
+
+
 PROTOCOL = "full_confusion_llm_pair_gt_anchor_margin_v1"
 NO_CONFUSION_PROTOCOL = "coop_vpt_no_confusion_v1"
 
@@ -218,9 +229,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 classnames=classnames,
                 support_items=self.dm.dataset.train_x,
             )
-            pair_description_file = PAIR_DESCRIPTION_ROOT / "{}.txt".format(
-                str(cfg.DATASET.NAME).casefold()
-            )
+            pair_description_file = _pair_description_file(cfg.DATASET.NAME)
             pair_description_bank, self.pair_description_metadata = (
                 build_frozen_pair_description_bank(
                     biomedclip_model,

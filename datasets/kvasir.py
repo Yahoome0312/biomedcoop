@@ -36,11 +36,13 @@ class Kvasir(DatasetBase):
                 print(f"Loading preprocessed few-shot data from {preprocessed}")
                 with open(preprocessed, "rb") as file:
                     data = pickle.load(file)
-                    train, val = data["train"], data["val"]
+                    # Older caches also contain a sampled validation subset.
+                    # Validation must remain the complete official split, so
+                    # restore only the sampled training data.
+                    train = data["train"]
             else:
                 train = self.generate_fewshot_dataset(train, num_shots=num_shots)
-                val = self.generate_fewshot_dataset(val, num_shots=min(num_shots, 4))
-                data = {"train": train, "val": val}
+                data = {"train": train}
                 print(f"Saving preprocessed few-shot data to {preprocessed}")
                 with open(preprocessed, "wb") as file:
                     pickle.dump(data, file, protocol=pickle.HIGHEST_PROTOCOL)
@@ -236,4 +238,3 @@ class Kvasir(DatasetBase):
             output.append(dataset_new)
         
         return output
-
