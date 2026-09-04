@@ -77,8 +77,6 @@ def _ordered_description_set(classnames, description_map, expected_count):
             )
         if any(not value for value in values):
             raise ValueError("Empty description found for {!r}".format(classname))
-        if len(set(values)) != len(values):
-            raise ValueError("Duplicate description found for {!r}".format(classname))
         ordered[classname] = values
         flattened.extend(values)
     return normalized_names, ordered, flattened
