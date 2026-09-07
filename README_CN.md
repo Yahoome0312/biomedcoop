@@ -2,7 +2,7 @@
 
 ## 方法说明
 
-本仓库基于 BiomedCLIP 实现医学图像少样本提示学习。当前 DermaMNIST 主线使用 CoOp、Visual/Text VPT、可选 TCP 和可选 Full Confusion 从头联合训练，TCP 与 Full Confusion 均默认开启。Full Confusion 使用训练集 support 样本构建的 Soft Bank，并使用 LLM 给出的有向类别对描述生成 Semantic 特征，不再直接计算类别文本特征差。BiomedCLIP 主干保持冻结，仅更新已启用的提示和 Full Confusion 参数；K-shot 采样只作用于训练集，验证集和测试集保持官方完整划分。
+本仓库基于 BiomedCLIP 实现医学图像少样本提示学习。当前 DermaMNIST 主线使用 CoOp、Visual/Text VPT、可选 TCP 和可选 Full Confusion 从头联合训练，TCP 与 Full Confusion 均默认开启。Full Confusion 仅根据当前图像的在线预测选择混淆类别对，并使用 LLM 给出的有向类别对描述生成 Semantic 特征，不再直接计算类别文本特征差。BiomedCLIP 主干保持冻结，仅更新已启用的提示和 Full Confusion 参数；K-shot 采样只作用于训练集，验证集和测试集保持官方完整划分。
 
 同一次实验中的可训练提示参数共用一套优化器和配置中的 `OPTIM.LR`，各提示分支不再设置独立学习率。训练、验证和测试的 `batch_size` 固定为 `32`，`num_workers` 固定为 `8`。实验 seed 只允许 `1、2、3`，每条训练命令运行其中一个 seed。cuDNN 使用 PyTorch 默认状态。
 
@@ -17,17 +17,7 @@ pip install -e ./Dassl.pytorch
 
 ## 单次训练
 
-先为 DermaMNIST 4-shot 的 seed 1、2、3 构建 Soft Bank：
-
-```bash
-python scripts/coopvpt/build_confusion_prior.py \
-  --data-root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
-  --dataset-config-file configs/datasets/dermamnist.yaml \
-  --output-root output/soft_confusion_banks \
-  --shots 4
-```
-
-然后运行 DermaMNIST 4-shot、seed 1 的 Full Confusion + TCP：
+直接运行 DermaMNIST 4-shot、seed 1 的 Full Confusion + TCP，无需预生成 confusion bank：
 
 ```bash
 python train.py \
@@ -76,7 +66,7 @@ Confusion Aware 默认开启。关闭时在训练命令末尾增加：
 TRAINER.CONFUSION_AWARE.ENABLED False
 ```
 
-关闭后代码会直接使用基础分类 logits 和交叉熵，并跳过 Soft Bank、`confuse_pair/<dataset>.txt`、Confusion Adapter、margin loss、Confusion 分析记录及对应梯度检查。因此无需提供 `BANK_ROOT`，`GAMMA=0` 和 `LAMBDA_CONF=0` 也不再作为关闭方式。
+关闭后代码会直接使用基础分类 logits 和交叉熵，并跳过 `confuse_pair/<dataset>.txt`、Confusion Adapter、margin loss、Confusion 分析记录及对应梯度检查。`GAMMA=0` 和 `LAMBDA_CONF=0` 也不再作为关闭方式。
 
 五组消融使用下面的 Trainer 和开关组合：
 
@@ -128,19 +118,15 @@ done
 
 ## Full Confusion
 
-批量实验前，为全部 shots 和固定 seed 1、2、3 构建 Soft Bank：
+当前方法只保留在线 confusion，不读取 support 图像生成的离线概率矩阵。已移除构建脚本及 `BANK_ROOT`、`PRIOR_ALPHA` 配置。
 
-```bash
-python scripts/coopvpt/build_confusion_prior.py \
-  --data-root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
-  --dataset-config-file configs/datasets/dermamnist.yaml \
-  --output-root output/soft_confusion_banks \
-  --shots 1 2 4 8 16 32
-```
+设基础 logits 为 $z\in\mathbb{R}^{B\times C}$，在线概率为 $p=\operatorname{softmax}(\operatorname{stopgrad}(z))$。训练时锚点 $a=y$；验证和测试时 $a=\arg\max_c z_c$，不输入真实标签。困难负类为 $b=\arg\max_{c\ne a}p_c$，随当前图像和模型预测变化；不累计跨批次 bank，也不使用离线先验加权。
 
-构建 Kvasir 或 CHMNIST 的 Soft Bank 时，分别将 `--dataset-config-file` 改为 `configs/datasets/kvasir.yaml` 或 `configs/datasets/chmnist.yaml`。每次调用只构建所指定数据集的 Bank。
+Adapter 输入为全局图像特征 `[B,512]`、patch tokens `[B,N,768]`、类别文本特征 `[C,512]`、基础 logits `[B,C]`、logit scale 和锚点 `[B]`。类别对描述经冻结文本编码器平均、归一化后形成语义特征表 `[C,C,512]`，在模型初始化时生成；它提供类别对语义，不包含 support 图像混淆概率。
 
-Soft Bank 路径已在 YAML 中固定为 `output/soft_confusion_banks`。训练阶段使用真实标签选择 Bank 行和困难负类；验证、测试阶段没有标签输入，使用基础 logits 的 top-1 选择 Bank 行。训练损失固定为交叉熵加 confusion margin loss。
+选中类别对的描述特征经 Semantic projector 生成语义向量，分别引导全局特征门控和 patch 注意力，再通过全局/局部门控及融合层得到 confusion 特征 $h$。最终图像特征为 $\hat v=\operatorname{normalize}(\operatorname{normalize}(v)+\gamma\operatorname{normalize}(h))$，使用原类别文本特征计算最终 logits，输出 `[B,C]` 及配对、在线概率、门控权重等分析信息。
+
+训练目标为 $L=L_{CE}+\lambda_{conf}\operatorname{mean}(\operatorname{softplus}(z^{final}_b-z^{final}_y))$。离散配对选择不反向传播，语义/视觉融合分支保留梯度。在线版本采用新的 checkpoint protocol，旧离线版本 checkpoint 不支持直接恢复；关闭 Confusion 的 protocol 保持不变。
 
 Semantic 特征来自数据集对应的有向类别对文件：DermaMNIST、Kvasir 和 CHMNIST 分别使用 `confuse_pair/DermaMNIST.txt`、`confuse_pair/Kvasir.txt` 和 `confuse_pair/CHMNIST.txt`。文件必须是下面的 JSON 结构：
 

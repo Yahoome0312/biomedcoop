@@ -1,0 +1,6 @@
+2026-09-07
+- 移除 BiomedCLIP support 离线 confusion bank 的生成脚本、统计/加载函数及 BANK_ROOT、PRIOR_ALPHA 配置。
+- 在线配对仅使用当前基础 logits 的概率，排除锚点后选最大负类；训练使用真实标签锚点，验证/测试使用预测 top-1。
+- 保留 LLM 类别对语义特征、全局/局部融合与 margin loss；删除离线先验分析字段与 checkpoint 元数据，更新在线 protocol，防止误恢复旧实验。
+- README_CN.md 同步训练入口、公式、输入输出和 checkpoint 兼容性；测试更新为在线选择和无离线状态验证。
+- 验证：指定 biocoop 环境执行 python -m pytest tests -q，35 passed、1 skipped；未运行完整训练或数据集评估。

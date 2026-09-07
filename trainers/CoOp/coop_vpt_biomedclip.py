@@ -28,10 +28,8 @@ from dassl.utils.torchtools import resume_from_checkpoint, save_checkpoint
 from models.biomedclip_loader import load_biomedclip
 from models.confusion_aware import (
     ConfusionAwareAdapter,
-    bank_file,
     build_frozen_pair_description_bank,
     confusion_margin_loss,
-    load_soft_confusion_bank,
 )
 from models.multitext_tcp import (
     MultiTextTCPBertTextEncoder,
@@ -56,7 +54,7 @@ def _pair_description_file(dataset_name):
     return PAIR_DESCRIPTION_ROOT / PAIR_DESCRIPTION_FILES[str(dataset_name)]
 
 
-PROTOCOL = "full_confusion_llm_pair_gt_anchor_margin_v1"
+PROTOCOL = "online_confusion_llm_pair_gt_anchor_margin_v2"
 NO_CONFUSION_PROTOCOL = "coop_vpt_no_confusion_v1"
 
 
@@ -115,10 +113,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         if abs(float(tcp.GATE_INIT) - 0.05) > 1e-12:
             raise ValueError("MT-TCP requires GATE_INIT=0.05")
         if confusion.ENABLED:
-            if not confusion.BANK_ROOT:
-                raise ValueError("Full confusion requires CONFUSION_AWARE.BANK_ROOT")
-            if float(confusion.PRIOR_ALPHA) < 0 or float(confusion.GAMMA) < 0:
-                raise ValueError("PRIOR_ALPHA and GAMMA must be non-negative")
+            if float(confusion.GAMMA) < 0:
+                raise ValueError("GAMMA must be non-negative")
             if float(confusion.LAMBDA_CONF) < 0:
                 raise ValueError("LAMBDA_CONF must be non-negative")
 
@@ -212,23 +208,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         base_fingerprint, base_entries = _parameter_fingerprint(base_named)
 
         confusion_adapter = None
-        self.bank_metadata = None
         self.pair_description_metadata = None
         if self.confusion_enabled:
-            path = bank_file(
-                confusion_cfg.BANK_ROOT,
-                cfg.DATASET.NAME,
-                cfg.DATASET.NUM_SHOTS,
-                cfg.SEED,
-            )
-            soft_prior, self.bank_metadata = load_soft_confusion_bank(
-                path,
-                dataset_name=cfg.DATASET.NAME,
-                shots=cfg.DATASET.NUM_SHOTS,
-                seed=cfg.SEED,
-                classnames=classnames,
-                support_items=self.dm.dataset.train_x,
-            )
             pair_description_file = _pair_description_file(cfg.DATASET.NAME)
             pair_description_bank, self.pair_description_metadata = (
                 build_frozen_pair_description_bank(
@@ -240,11 +221,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 )
             )
             confusion_adapter = ConfusionAwareAdapter(
-                soft_prior,
-                self.bank_metadata["bank_fingerprint"],
                 pair_description_bank,
                 self.pair_description_metadata["feature_fingerprint"],
-                prior_alpha=confusion_cfg.PRIOR_ALPHA,
                 gamma=confusion_cfg.GAMMA,
             )
             self.model.confusion_adapter = confusion_adapter
@@ -290,7 +268,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         }
         if self.confusion_enabled:
             manifest.update(
-                bank_fingerprint=self.bank_metadata["bank_fingerprint"],
                 pair_description_fingerprint=self.pair_description_metadata[
                     "description_fingerprint"
                 ],
@@ -572,9 +549,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                             "true_label": int(labels[index].item()),
                             "pair_first": int(details["pair_first"][index].item()),
                             "pair_second": int(details["pair_second"][index].item()),
-                            "selected_prior": float(
-                                details["selected_prior"][index].item()
-                            ),
                             "selected_score": float(
                                 details["selected_score"][index].item()
                             ),
@@ -613,11 +587,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
             "tcp_enabled": self.tcp_enabled,
             "confusion_enabled": self.confusion_enabled,
-            "bank_fingerprint": (
-                self.bank_metadata["bank_fingerprint"]
-                if self.confusion_enabled
-                else None
-            ),
             "pair_feature_fingerprint": (
                 self.pair_description_metadata["feature_fingerprint"]
                 if self.confusion_enabled
@@ -657,9 +626,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         if bool(checkpoint.get("confusion_enabled", True)) != self.confusion_enabled:
             raise RuntimeError("Checkpoint Confusion setting does not match current run")
         if self.confusion_enabled:
-            expected_bank = self.bank_metadata["bank_fingerprint"]
-            if checkpoint.get("bank_fingerprint") != expected_bank:
-                raise RuntimeError("Checkpoint Bank fingerprint does not match current run")
             expected_pair_features = self.pair_description_metadata[
                 "feature_fingerprint"
             ]

@@ -102,7 +102,6 @@ def _tcp_ablation_cfg(enabled):
     extend_cfg(cfg)
     cfg.OPTIM.NAME = "adamw"
     cfg.TRAINER.TCP.ENABLED = enabled
-    cfg.TRAINER.CONFUSION_AWARE.BANK_ROOT = "bank"
     return cfg
 
 
@@ -112,12 +111,12 @@ def test_full_confusion_accepts_tcp_on_and_off():
     trainer.check_cfg(_tcp_ablation_cfg(False))
 
 
-def test_full_confusion_requires_bank_root():
+def test_full_confusion_needs_no_offline_config():
     trainer = object.__new__(CoOpVPT_BiomedCLIP)
     cfg = _tcp_ablation_cfg(False)
-    cfg.TRAINER.CONFUSION_AWARE.BANK_ROOT = ""
-    with pytest.raises(ValueError, match="requires CONFUSION_AWARE.BANK_ROOT"):
-        trainer.check_cfg(cfg)
+    assert "BANK_ROOT" not in cfg.TRAINER.CONFUSION_AWARE
+    assert "PRIOR_ALPHA" not in cfg.TRAINER.CONFUSION_AWARE
+    trainer.check_cfg(cfg)
 
 
 @pytest.mark.parametrize("tcp_enabled", [False, True])
@@ -125,7 +124,6 @@ def test_confusion_off_does_not_require_bank_root(tcp_enabled):
     trainer = object.__new__(CoOpVPT_BiomedCLIP)
     cfg = _tcp_ablation_cfg(tcp_enabled)
     cfg.TRAINER.CONFUSION_AWARE.ENABLED = False
-    cfg.TRAINER.CONFUSION_AWARE.BANK_ROOT = ""
 
     trainer.check_cfg(cfg)
 

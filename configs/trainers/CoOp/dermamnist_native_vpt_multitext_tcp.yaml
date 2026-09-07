@@ -53,7 +53,5 @@ TRAINER:
     GATE_INIT: 0.05
   CONFUSION_AWARE:
     ENABLED: True
-    BANK_ROOT: "output/soft_confusion_banks"
-    PRIOR_ALPHA: 1.0
     GAMMA: 0.2
     LAMBDA_CONF: 1.0
