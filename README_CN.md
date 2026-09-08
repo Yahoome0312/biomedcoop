@@ -147,3 +147,7 @@ Semantic 特征来自数据集对应的有向类别对文件：DermaMNIST、Kvas
 ```
 
 外层类别必须与数据集类别完全对应；每个类别必须包含指向其他所有类别的描述，不能包含自身；每个有向类别对可以有不同数量的描述，但列表不能为空。代码会动态读取类别数量，将同一有向类别对的全部描述通过冻结 BiomedCLIP 编码后平均，因此其他数据集不需要修改模型代码，只需增加同格式文件。
+
+## 本次 no-bank 实验
+
+本次运行 DermaMNIST、Kvasir、CHMNIST 的 4/8/16/32-shot，seed 1/2/3，共 36 次；TCP 关闭，在线 Confusion 开启。其余参数使用主线 YAML（100 epoch）。输出位于 `output/no_bank_confusion_3datasets_4_32shot/<dataset>/tcp_off/shots_<K>/seed<S>/`；`evaluation/accuracy` 和 `evaluation/balanced_accuracy` 分别保存按对应验证指标选出的 checkpoint 的测试结果，`_manager/status.json` 记录调度进度。
