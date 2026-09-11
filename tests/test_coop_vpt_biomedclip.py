@@ -11,6 +11,7 @@ from models.vpt import TimmViTVisualPromptEncoder
 from train import extend_cfg
 from trainers.CoOp.coop_vpt_biomedclip import (
     CoOpVPT_BiomedCLIP,
+    _base_topk_hits,
     _pair_description_file,
 )
 
@@ -143,6 +144,48 @@ def test_confusion_off_uses_only_cross_entropy():
     assert torch.equal(losses["loss"], expected)
     assert torch.equal(losses["loss_ce"], expected)
     assert details is None
+
+
+def test_confusion_training_uses_prediction_routing_and_gt_excluded_competitor():
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.confusion_enabled = True
+    trainer.cfg = _tcp_ablation_cfg(False)
+    base_logits = torch.tensor([[2.0, 3.0, 1.0], [1.0, 2.0, 3.0]])
+    output_logits = base_logits.clone().requires_grad_()
+
+    class Model:
+        def __call__(self, image, **kwargs):
+            assert kwargs == {"return_confusion_details": True}
+            base_prediction = base_logits.argmax(dim=1)
+            details = {
+                "pair_first": base_prediction,
+                "pair_second": torch.tensor([0, 1]),
+                "base_prediction": base_prediction,
+                "final_prediction": output_logits.detach().argmax(dim=1),
+            }
+            return output_logits, details, base_logits
+
+    trainer.model = Model()
+    labels = torch.tensor([0, 0])
+    _, losses, details = trainer._compute_training_loss(None, labels)
+
+    assert details["pair_first"].tolist() == [1, 2]
+    assert details["pair_second"].tolist() == [0, 1]
+    assert details["competitor"].tolist() == [1, 2]
+    assert details["competitor"].ne(labels).all()
+    assert set(losses) == {"loss", "loss_ce", "loss_confuse"}
+
+
+def test_base_topk_hits_report_gt_coverage():
+    base_logits = torch.tensor(
+        [[5.0, 4.0, 3.0, 2.0, 1.0, 0.0], [5.0, 4.0, 3.0, 2.0, 1.0, 0.0]]
+    )
+    labels = torch.tensor([1, 4])
+
+    hits = _base_topk_hits(base_logits, labels)
+
+    assert hits[2].tolist() == [True, False]
+    assert hits[5].tolist() == [True, True]
 
 
 @pytest.mark.parametrize(

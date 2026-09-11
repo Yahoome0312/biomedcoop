@@ -30,6 +30,7 @@ from models.confusion_aware import (
     ConfusionAwareAdapter,
     build_frozen_pair_description_bank,
     confusion_margin_loss,
+    select_hard_negative,
 )
 from models.multitext_tcp import (
     MultiTextTCPBertTextEncoder,
@@ -54,7 +55,7 @@ def _pair_description_file(dataset_name):
     return PAIR_DESCRIPTION_ROOT / PAIR_DESCRIPTION_FILES[str(dataset_name)]
 
 
-PROTOCOL = "online_confusion_llm_pair_gt_anchor_margin_v2"
+PROTOCOL = "online_confusion_predicted_pair_hard_negative_margin_v3"
 NO_CONFUSION_PROTOCOL = "coop_vpt_no_confusion_v1"
 
 
@@ -62,6 +63,17 @@ def _json_write(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2), encoding="utf-8")
+
+
+def _base_topk_hits(base_logits, labels, topk=(2, 5)):
+    max_k = min(max(topk), base_logits.shape[1])
+    ranking = base_logits.detach().topk(max_k, dim=1).indices
+    return {
+        k: ranking[:, : min(k, base_logits.shape[1])]
+        .eq(labels.unsqueeze(1))
+        .any(dim=1)
+        for k in topk
+    }
 
 
 def _parameter_fingerprint(named_parameters):
@@ -144,6 +156,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             )
             self._train_alpha_sum = torch.zeros(2, dtype=torch.float64)
             self._train_alpha_count = 0
+            self._train_base_topk_correct = {2: 0, 5: 0}
 
         tcp = cfg.TRAINER.TCP
         self.tcp_enabled = bool(tcp.ENABLED)
@@ -393,6 +406,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             self._train_pair_counts.zero_()
             self._train_alpha_sum.zero_()
             self._train_alpha_count = 0
+            self._train_base_topk_correct = {2: 0, 5: 0}
 
     def after_epoch(self):
         super().after_epoch()
@@ -404,7 +418,16 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         }
         if self._train_alpha_count:
             means = self._train_alpha_sum / self._train_alpha_count
-            summary.update(alpha_global=float(means[0]), alpha_local=float(means[1]))
+            summary.update(
+                alpha_global=float(means[0]),
+                alpha_local=float(means[1]),
+                base_top2_accuracy=(
+                    100.0 * self._train_base_topk_correct[2] / self._train_alpha_count
+                ),
+                base_top5_accuracy=(
+                    100.0 * self._train_base_topk_correct[5] / self._train_alpha_count
+                ),
+            )
         _json_write(
             Path(self.output_dir)
             / "confusion_analysis"
@@ -439,6 +462,12 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         if self.confusion_enabled:
             summary["alpha_global"] = details["alpha_global"].mean().item()
             summary["alpha_local"] = details["alpha_local"].mean().item()
+            summary["base_top2_accuracy"] = (
+                100.0 * details["base_top2_correct"].float().mean().item()
+            )
+            summary["base_top5_accuracy"] = (
+                100.0 * details["base_top5_correct"].float().mean().item()
+            )
         if (self.batch_idx + 1) == self.num_batches:
             self.update_lr()
         return summary
@@ -452,14 +481,20 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         output, details, _base_logits = self.model(
             image,
             return_confusion_details=True,
-            confusion_anchor=label,
         )
         loss_ce = F.cross_entropy(output, label)
-        if not torch.equal(details["pair_first"], label):
-            raise RuntimeError("Training confusion anchor must equal the true label")
-        competitor = details["pair_second"]
+        base_prediction = _base_logits.detach().argmax(dim=1)
+        if not torch.equal(details["pair_first"], base_prediction):
+            raise RuntimeError("Training pair_first must equal the base prediction")
+        competitor = select_hard_negative(_base_logits, label)
         loss_confuse = confusion_margin_loss(output, label, competitor)
         details["competitor"] = competitor
+        details.update(
+            {
+                "base_top{}_correct".format(k): hits
+                for k, hits in _base_topk_hits(_base_logits, label).items()
+            }
+        )
         loss = loss_ce + float(
             self.cfg.TRAINER.CONFUSION_AWARE.LAMBDA_CONF
         ) * loss_confuse
@@ -477,6 +512,10 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         self._train_alpha_sum[0] += details["alpha_global"].detach().double().sum().cpu()
         self._train_alpha_sum[1] += details["alpha_local"].detach().double().sum().cpu()
         self._train_alpha_count += int(first.numel())
+        for k in (2, 5):
+            self._train_base_topk_correct[k] += int(
+                details["base_top{}_correct".format(k)].sum().item()
+            )
 
     def _audit_gradients_once(self):
         if self._gradient_audit_complete:
@@ -532,12 +571,20 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         )
         print("Do evaluation on {} set".format(split))
         records = [] if self.confusion_enabled else None
+        base_topk_correct = {2: 0, 5: 0}
+        base_topk_total = 0
         for batch in tqdm(data_loader):
             inputs, labels = self.parse_batch_test(batch)
             if self.confusion_enabled:
                 output, details, _base_logits = self.model(
                     inputs, return_confusion_details=True
                 )
+                details["competitor"] = select_hard_negative(_base_logits, labels)
+                topk_hits = _base_topk_hits(_base_logits, labels)
+                for k, hits in topk_hits.items():
+                    details["base_top{}_correct".format(k)] = hits
+                    base_topk_correct[k] += int(hits.sum().item())
+                base_topk_total += int(labels.numel())
             else:
                 output = self.model(inputs)
             self.evaluator.process(output, labels)
@@ -549,6 +596,19 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                             "true_label": int(labels[index].item()),
                             "pair_first": int(details["pair_first"][index].item()),
                             "pair_second": int(details["pair_second"][index].item()),
+                            "competitor": int(details["competitor"][index].item()),
+                            "base_prediction": int(
+                                details["base_prediction"][index].item()
+                            ),
+                            "final_prediction": int(
+                                details["final_prediction"][index].item()
+                            ),
+                            "base_top2_correct": bool(
+                                details["base_top2_correct"][index].item()
+                            ),
+                            "base_top5_correct": bool(
+                                details["base_top5_correct"][index].item()
+                            ),
                             "selected_score": float(
                                 details["selected_score"][index].item()
                             ),
@@ -562,6 +622,17 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                     )
 
         results = self.evaluator.evaluate()
+        if self.confusion_enabled:
+            results["base_top2_accuracy"] = (
+                100.0 * base_topk_correct[2] / base_topk_total
+            )
+            results["base_top5_accuracy"] = (
+                100.0 * base_topk_correct[5] / base_topk_total
+            )
+            print(
+                "* base top@2: {base_top2_accuracy:.2f}%\n"
+                "* base top@5: {base_top5_accuracy:.2f}%".format(**results)
+            )
         self.last_eval_results = results
         for key, value in results.items():
             self.write_scalar("{}/{}".format(split, key), value, self.epoch)

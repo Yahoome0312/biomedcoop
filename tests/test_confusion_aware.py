@@ -8,6 +8,7 @@ from models.confusion_aware import (
     build_frozen_pair_description_bank,
     confusion_margin_loss,
     select_confusion_pairs,
+    select_hard_negative,
 )
 
 
@@ -92,7 +93,7 @@ def test_confusion_margin_compares_true_class_with_selected_negative():
     assert logits.grad is not None
 
 
-def test_full_confusion_uses_ground_truth_anchor_and_backpropagates():
+def test_full_confusion_uses_predicted_anchor_and_backpropagates():
     torch.manual_seed(1)
     pair_bank = torch.randn(3, 3, 512)
     adapter = ConfusionAwareAdapter(
@@ -104,19 +105,19 @@ def test_full_confusion_uses_ground_truth_anchor_and_backpropagates():
     base_logits = torch.tensor(
         [[0.1, 3.0, 0.2], [2.0, 0.3, 0.1]], requires_grad=True
     )
-    labels = torch.tensor([0, 2])
+    predicted = base_logits.argmax(dim=1)
     logits, details = adapter(
         global_features,
         patches,
         text,
         base_logits,
         torch.tensor(10.0),
-        labels,
+        predicted,
     )
     assert logits.shape == (2, 3)
     assert torch.isfinite(logits).all()
-    assert details["pair_first"].tolist() == labels.tolist()
-    assert details["pair_second"].ne(labels).all()
+    assert details["pair_first"].tolist() == predicted.tolist()
+    assert details["pair_second"].ne(predicted).all()
     logits.sum().backward()
     assert text.grad is not None
     assert global_features.grad is not None
@@ -130,6 +131,22 @@ def test_online_pairs_follow_current_logits_and_exclude_prediction_anchor():
     assert second.tolist() == [1, 2]
     assert torch.isneginf(scores[:, 0]).all()
     assert torch.allclose(probabilities.sum(-1), torch.ones(2))
+
+
+def test_predicted_routing_and_hard_negative_are_independent():
+    # Row 1: GT=A and base ranking B>A>C. Row 2: GT=A is outside top-2.
+    base_logits = torch.tensor([[2.0, 3.0, 1.0], [1.0, 2.0, 3.0]])
+    labels = torch.tensor([0, 0])
+
+    first, second, _, _ = select_confusion_pairs(
+        base_logits, base_logits.argmax(dim=1)
+    )
+    competitor = select_hard_negative(base_logits, labels)
+
+    assert first.tolist() == [1, 2]
+    assert second.tolist() == [0, 1]
+    assert competitor.tolist() == [1, 2]
+    assert competitor.ne(labels).all()
 
 
 def test_online_adapter_checkpoint_has_no_offline_prior():

@@ -178,6 +178,17 @@ def select_confusion_pairs(logits, first):
     return first, second, probabilities, scores
 
 
+def select_hard_negative(base_logits, labels):
+    """Select the highest-scoring base class after excluding the ground truth."""
+
+    scores = base_logits.detach().float().clone()
+    scores.scatter_(1, labels.unsqueeze(1), float("-inf"))
+    competitor = scores.argmax(dim=1)
+    if competitor.eq(labels).any():
+        raise RuntimeError("Hard-negative competitor must differ from the true label")
+    return competitor
+
+
 def confusion_margin_loss(logits, labels, competitor):
     labels = labels.long()
     competitor = competitor.long()

@@ -211,6 +211,8 @@ class CustomCLIP(nn.Module):
                 logit_scale,
                 first,
             )
+            details["base_prediction"] = base_logits.detach().argmax(dim=-1)
+            details["final_prediction"] = logits.detach().argmax(dim=-1)
 
         if return_features:
             return logits, normalized_text, normalized_images

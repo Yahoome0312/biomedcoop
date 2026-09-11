@@ -11,3 +11,12 @@
 - output/no_bank_confusion_3datasets_4_32shot/_manager/run.py 调度空闲GPU，每任务一张卡；保存验证 accuracy/balanced_accuracy 最佳模型并分别评估测试集。
 - 调度补充：既有同结构训练峰值显存约3.8GiB；允许在显存占用<12GiB且GPU利用率<10%的卡上启动一个本次任务，每张卡最多一个本次任务，不终止其他任务；汇总脚本自动更新CSV/Markdown。
 - 调度自检修正：任务启动后立即记录PID；汇总失败不停止队列；训练失败归档后从头自动补跑一次，最终仍失败时非零退出并保留失败清单。
+
+2026-09-11 预测路由第一阶段
+- 训练不再传入 `confusion_anchor=label`；训练、验证、测试的语义 pair 均为 base logits 的 top-1/top-2，训练检查改为 `pair_first == argmax(base_logits)`，允许 `pair_second == label`。
+- margin competitor 不再取 `details["pair_second"]`，改为在 detach 的 base logits 中屏蔽 GT 后 argmax，并保留 `competitor != label` 的显式检查；CE 和 confusion loss 权重未改。
+- confusion details/逐样本评估增加 competitor、base_prediction、final_prediction，以及 base top@2/top@5 命中记录；训练 epoch、验证与测试结果增加 base_top2_accuracy/base_top5_accuracy。
+- checkpoint protocol 更新为 `online_confusion_predicted_pair_hard_negative_margin_v3`，避免恢复旧 GT 路由 checkpoint；模型结构、ConfusionAwareAdapter、Prompt、TCP、optimizer、LR、epoch、batch size、augmentation、GAMMA、LAMBDA_CONF、数据集和 YAML 均未修改。
+- 新增回归测试覆盖 GT=A 且 base ranking=B>A>C，以及 GT 不在 top2；目标单测结果 22 passed、1 skipped，完整测试结果 38 passed、1 skipped。
+- 第一阶段实验沿用当前 no-bank 对照的 TCP-off，计划 DermaMNIST/Kvasir/CHMNIST × shots 4/8/16/32 × seeds 1/2/3，共 36 次；固定 GPU 1–6，每张卡同一时刻只运行一个完整实验。输出根目录为 `output/predicted_routing_stage1_3datasets_4_32shot`。
+- 2026-09-11 02:38:44 已在 tmux 会话 `predicted-routing-s1` 启动队列；首批 6 个任务占用 GPU 1–6。DermaMNIST 4-shot seed2 已通过参数/梯度审计并完成 epoch 1 训练与验证，训练日志和验证结果均出现 base top@2/top@5，证明端到端链路正常；队列状态见 `_manager/status.json`。

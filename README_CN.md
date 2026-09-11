@@ -120,13 +120,15 @@ done
 
 当前方法只保留在线 confusion，不读取 support 图像生成的离线概率矩阵。已移除构建脚本及 `BANK_ROOT`、`PRIOR_ALPHA` 配置。
 
-设基础 logits 为 $z\in\mathbb{R}^{B\times C}$，在线概率为 $p=\operatorname{softmax}(\operatorname{stopgrad}(z))$。训练时锚点 $a=y$；验证和测试时 $a=\arg\max_c z_c$，不输入真实标签。困难负类为 $b=\arg\max_{c\ne a}p_c$，随当前图像和模型预测变化；不累计跨批次 bank，也不使用离线先验加权。
+设基础 logits 为 $z\in\mathbb{R}^{B\times C}$，在线概率为 $p=\operatorname{softmax}(\operatorname{stopgrad}(z))$。训练、验证和测试统一使用预测路由：$a=\arg\max_c z_c$，$b=\arg\max_{c\ne a}z_c$，即 `pair_first` 和 `pair_second` 分别为 base top-1 和 top-2。GT 不参与语义类别对选择，因此允许 `pair_second == label`。
 
 Adapter 输入为全局图像特征 `[B,512]`、patch tokens `[B,N,768]`、类别文本特征 `[C,512]`、基础 logits `[B,C]`、logit scale 和锚点 `[B]`。类别对描述经冻结文本编码器平均、归一化后形成语义特征表 `[C,C,512]`，在模型初始化时生成；它提供类别对语义，不包含 support 图像混淆概率。
 
 选中类别对的描述特征经 Semantic projector 生成语义向量，分别引导全局特征门控和 patch 注意力，再通过全局/局部门控及融合层得到 confusion 特征 $h$。最终图像特征为 $\hat v=\operatorname{normalize}(\operatorname{normalize}(v)+\gamma\operatorname{normalize}(h))$，使用原类别文本特征计算最终 logits，输出 `[B,C]` 及配对、在线概率、门控权重等分析信息。
 
-训练目标为 $L=L_{CE}+\lambda_{conf}\operatorname{mean}(\operatorname{softplus}(z^{final}_b-z^{final}_y))$。离散配对选择不反向传播，语义/视觉融合分支保留梯度。在线版本采用新的 checkpoint protocol，旧离线版本 checkpoint 不支持直接恢复；关闭 Confusion 的 protocol 保持不变。
+margin loss 的 hard negative 与语义路由独立：先复制并 detach 基础 logits，将 GT 位置置为 $-\infty$，再取 $q=\arg\max_{c\ne y}z_c$，始终保证 $q\ne y$。训练目标为 $L=L_{CE}+\lambda_{conf}\operatorname{mean}(\operatorname{softplus}(z^{final}_q-z^{final}_y))$。CE、$\lambda_{conf}$ 和其他训练参数不变。离散选择不反向传播，语义/视觉融合分支保留梯度。
+
+confusion details 复用现有字典并记录 `pair_first`、`pair_second`、`competitor`、`base_prediction` 和 `final_prediction`。训练 epoch 记录、验证结果和测试结果增加 `base_top2_accuracy`、`base_top5_accuracy`；逐样本评估记录同时保存两个命中标记。当前预测路由版本使用独立 checkpoint protocol，不能恢复 GT 路由实验的 checkpoint；关闭 Confusion 的 protocol 保持不变。
 
 Semantic 特征来自数据集对应的有向类别对文件：DermaMNIST、Kvasir 和 CHMNIST 分别使用 `confuse_pair/DermaMNIST.txt`、`confuse_pair/Kvasir.txt` 和 `confuse_pair/CHMNIST.txt`。文件必须是下面的 JSON 结构：
 
@@ -151,3 +153,9 @@ Semantic 特征来自数据集对应的有向类别对文件：DermaMNIST、Kvas
 ## 本次 no-bank 实验
 
 本次运行 DermaMNIST、Kvasir、CHMNIST 的 4/8/16/32-shot，seed 1/2/3，共 36 次；TCP 关闭，在线 Confusion 开启。其余参数使用主线 YAML（100 epoch）。输出位于 `output/no_bank_confusion_3datasets_4_32shot/<dataset>/tcp_off/shots_<K>/seed<S>/`；`evaluation/accuracy` 和 `evaluation/balanced_accuracy` 分别保存按对应验证指标选出的 checkpoint 的测试结果，`_manager/status.json` 记录调度进度。
+
+## 预测路由第一阶段实验
+
+第一阶段只把训练语义类别对从 GT 路由替换为 base top-1/top-2，并把 margin competitor 替换为排除 GT 后的 base hard negative。对照设置保持 TCP 关闭，原模型、Prompt、ConfusionAwareAdapter、优化与数据配置均不变。实验覆盖 DermaMNIST、Kvasir、CHMNIST 的 4/8/16/32-shot 和 seed 1/2/3，共 36 次；GPU 1–6 各自串行执行完整实验。
+
+输出位于 `output/predicted_routing_stage1_3datasets_4_32shot/<dataset>/tcp_off/shots_<K>/seed<S>/`。查看队列用 `tmux attach -t predicted-routing-s1` 或读取 `_manager/status.json`；汇总结果写入 `_summary/results_detailed.csv` 和 `_summary/results_summary.csv`。
