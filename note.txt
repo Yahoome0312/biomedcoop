@@ -20,3 +20,10 @@
 - 新增回归测试覆盖 GT=A 且 base ranking=B>A>C，以及 GT 不在 top2；目标单测结果 22 passed、1 skipped，完整测试结果 38 passed、1 skipped。
 - 第一阶段实验沿用当前 no-bank 对照的 TCP-off，计划 DermaMNIST/Kvasir/CHMNIST × shots 4/8/16/32 × seeds 1/2/3，共 36 次；固定 GPU 1–6，每张卡同一时刻只运行一个完整实验。输出根目录为 `output/predicted_routing_stage1_3datasets_4_32shot`。
 - 2026-09-11 02:38:44 已在 tmux 会话 `predicted-routing-s1` 启动队列；首批 6 个任务占用 GPU 1–6。DermaMNIST 4-shot seed2 已通过参数/梯度审计并完成 epoch 1 训练与验证，训练日志和验证结果均出现 base top@2/top@5，证明端到端链路正常；队列状态见 `_manager/status.json`。
+
+2026-09-13 原始联合重跑
+- 用户已撤销safe correction全部代码；明确授权删除output/safe_correction_v1、v2_aux、v3_rng、v4_residual四目录，确认无旧进程后执行删除。
+- 不改模型/trainer/任务YAML/损失，仅在output/original_tcp_confusion_joint_3datasets_4_32shot/_manager增加独立调度与汇总；原始TCP+Confusion同时开启，三数据集×shots8/4/16/32×seeds1/2/3共36次，无性能扩展门槛。
+- 指定biocoop环境，空闲GPU单任务单卡；tmux会话original-joint-36，任务退出事件立即接续，900秒发现空闲卡；worker失败保留日志并停止新任务。保存两种验证指标checkpoint测试及耗时，历史TCP按用户两位小数表明确标记来源。
+- 2026-09-13 19:32 已在tmux original-joint-36启动GPU4/7，DermaMNIST 8-shot seed2已完成真实batch并通过原有梯度审计：TCP和Confusion均有非零梯度，可训练参数3,731,591，无新增safe gate。四个旧结果目录删除完成。按用户要求启动确认后结束对话，由tmux继续完成36次。
+

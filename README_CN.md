@@ -159,3 +159,12 @@ Semantic 特征来自数据集对应的有向类别对文件：DermaMNIST、Kvas
 第一阶段只把训练语义类别对从 GT 路由替换为 base top-1/top-2，并把 margin competitor 替换为排除 GT 后的 base hard negative。对照设置保持 TCP 关闭，原模型、Prompt、ConfusionAwareAdapter、优化与数据配置均不变。实验覆盖 DermaMNIST、Kvasir、CHMNIST 的 4/8/16/32-shot 和 seed 1/2/3，共 36 次；GPU 1–6 各自串行执行完整实验。
 
 输出位于 `output/predicted_routing_stage1_3datasets_4_32shot/<dataset>/tcp_off/shots_<K>/seed<S>/`。查看队列用 `tmux attach -t predicted-routing-s1` 或读取 `_manager/status.json`；汇总结果写入 `_summary/results_detailed.csv` 和 `_summary/results_summary.csv`。
+
+## 原始 TCP + Confusion 联合重跑
+
+使用撤销safe correction后的原始模型：TCP文本编码得到特征和logits，Confusion使用这些表示与预测top-1/top-2进行融合。最终由Confusion输出预测，loss为原有CE+LAMBDA_CONF×L_conf，无额外gate、preservation或梯度/RNG隔离。
+
+三数据集×4/8/16/32-shot×seeds1/2/3，共36次，先8-shot再4/16/32-shot，不设置性能筛选。配置沿用原任务YAML，显式TCP.ENABLED=True与CONFUSION_AWARE.ENABLED=True；模型和训练超参数不改。
+
+队列：`output/original_tcp_confusion_joint_3datasets_4_32shot/_manager/run.py`；tmux会话`original-joint-36`。输出为`<dataset>/both/shots_<K>/seed<S>/`，`evaluation/accuracy`和`evaluation/balanced_accuracy`保存两种验证选模的测试结果。`_manager/status.json`记录进度，`_summary`保存逐seed和均值/标准差CSV及历史对照。对话在确认首任务训练后结束，tmux继续运行。
+
