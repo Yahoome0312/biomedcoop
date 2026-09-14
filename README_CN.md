@@ -4,7 +4,7 @@
 
 本仓库基于 BiomedCLIP 实现医学图像少样本提示学习。当前 DermaMNIST 主线使用 CoOp、Visual/Text VPT、可选 TCP 和可选 Full Confusion 从头联合训练，TCP 与 Full Confusion 均默认开启。Full Confusion 仅根据当前图像的在线预测选择混淆类别对，并使用 LLM 给出的有向类别对描述生成 Semantic 特征，不再直接计算类别文本特征差。BiomedCLIP 主干保持冻结，仅更新已启用的提示和 Full Confusion 参数；K-shot 采样只作用于训练集，验证集和测试集保持官方完整划分。
 
-同一次实验中的可训练提示参数共用一套优化器和配置中的 `OPTIM.LR`，各提示分支不再设置独立学习率。训练、验证和测试的 `batch_size` 固定为 `32`，`num_workers` 固定为 `8`。实验 seed 只允许 `1、2、3`，每条训练命令运行其中一个 seed。cuDNN 使用 PyTorch 默认状态。
+同一次实验中的可训练提示参数共用一套优化器和配置中的 `OPTIM.LR`，各提示分支不再设置独立学习率。训练、验证和测试的 `batch_size` 固定为 `32`，`num_workers` 固定为 `8`。主实验 seed 使用 `1、2、3`，补充实验允许使用 `4`，每条训练命令运行其中一个 seed。cuDNN 使用 PyTorch 默认状态。
 
 ## 安装
 
@@ -221,3 +221,20 @@ done
 TCP基线来源澄清（2026-09-14更新）：上述MoE使用`paper_3datasets_4methods/coop_deep_prompt_mttcp`，36组TCP重评test accuracy与该批原始记录逐seed一致。用户旧表三个数据集全部12个均值/标准差已定位到`coop_deep_prompt_mttcp_gpu2_4_32shot`的best_validation_accuracy.json，即最佳验证集成绩，不是测试集成绩；对应36个checkpoint均存在。两批均为grouped10/LayerBasis版本，不能把旧表当成mean50测试结果，也不能将旧表与MoE测试结果直接比较。补测入口为`output/historical_tcp_test_comparison/evaluate.py`，使用GPU4，仅加载validation accuracy最佳checkpoint并验证恢复后评估test，不训练。
 
 六方法统一结果见[核对表](output/linear_moe/six_method_accuracy_verified.md)：从216条原始test记录重算，使用validation accuracy选模和3个seed样本标准差；包含CoOp、CoOp+视觉/文本Deep Prompt、TCP、预测路由Confusion、联合TCP+Confusion与冻结专家Linear MoE。TCP明确为paper批次grouped10/LayerBasis版本，不混入旧TCP验证集表或mean50结果；逐seed原始文件路径保存在six_method_accuracy_detailed.csv。
+
+旧TCP批次补评已完成36/36组，每组val accuracy均复现。两批TCP的聚合元数据均为grouped10_layer_residual，不是mean50；旧批test与paper批test在12个设置中5高7低，整体等权均值分别74.52%和74.53%。旧表CHMNIST32-shot90.57±1.38是val，实际test为88.65±0.78。详见[旧批TCP测试集对比](output/historical_tcp_test_comparison/comparison.md)，逐seed checkpoint路径和成绩见同目录detailed.csv。恢复允许bank数值指纹差异，不宣称bank逐位相同。
+
+
+### Original-style Biomedical TCP（结构消融）
+
+在现有运行命令末尾设置 `TRAINER.TCP.MODE original_style`；默认 `multitext` 保留原 LayerBasis + XProto 路径及旧 checkpoint。`TRAINER.TCP.INSERT_LAYER` 默认 8（从 0 编号）。数据、采样、CoOp、Visual Deep Prompt、优化器和训练日程不变。
+
+新模块 `models/original_style_tcp.py` 使用冻结 BiomedCLIP 对每条 description 独立编码后的最终投影特征 `[C,50,D_proj]`，按类别计算 `w_c = normalize(mean_i(t_ci))`，注册为不可训练 buffer。它复用 projected description cache，不构建中间层 description bank。共享 TKE 为 `Linear(D_proj,D_proj//4) → QuickGELU → Linear(D_proj//4,4*hidden_dim)`，直接 reshape 为 `[C,4,hidden_dim]`；默认维度为 `512→128→3072→[C,4,768]`。
+
+block 0–7 沿用 CoOp + Text Deep Prompt，block 8 输入处把 CLS 后的位置 1–4 替换为该类别的 TKE tokens。block 9–11 不调用 prompt replacement，所有 hidden states 自然传播。Original-style 不含 5×10 grouping、LayerBasis、XProto 残差组合、B+Delta、跨类别 centering、token norm matching、layer gate 或多层 TCP 重注入。Mean-50 prototype 的归一化仍保留。
+
+backbone 与 description bank 均冻结，仅训练原 CoOp context、Visual Deep Prompt、注入前必要的 Text Deep Prompt 和共享 TKE。TKE 含 bias 共 461,952 参数；默认 8 层 Text Deep Prompt 共 24,576 参数；新 TCP 参数包合计 486,528，相比现有 MultiText 包 531,589 减少 45,061。CoOp/视觉/Confusion 参数量不变。`TCP.ENABLED=False` 时新模式使用完整普通 Text Deep Prompt 路径并冻结 TKE。
+
+Original-style 仅改变 TCP 结构，沿用现有分类目标；启用 Confusion 时保留原有 Confusion loss 和路由，不增加额外知识一致性损失。新旧 TCP 参数包使用不同 metadata 校验，禁止交叉加载；现有 MultiText checkpoint 字段不变。
+
+局部验证：`python -m pytest tests/test_original_style_tcp.py tests/test_multitext_tcp.py tests/test_coop_vpt_biomedclip.py tests/test_confusion_aware.py tests/test_expert_moe.py tests/test_text_vpt.py tests/test_dual_best_checkpoints.py -q`。测试使用小型 BERT，无需训练或下载 backbone。

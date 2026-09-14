@@ -69,3 +69,13 @@
 - 三数据集12个旧表均值/样本标准差全部精确对应coop_deep_prompt_mttcp_gpu2_4_32shot的best_validation_accuracy.json，36个checkpoint存在；旧表是validation而非test。撤回此前无法定位的结论及旧表与MoE test直接比较。
 - 新增output/historical_tcp_test_comparison/evaluate.py：GPU4加载旧批validation accuracy最佳checkpoint，保留严格bank/方法元数据检查，逐组复现历史val accuracy后计算test accuracy，对比paper批原始test记录。无训练或模型参数更新；按数据集复用冻结backbone，逐组完整加载prompt bundle。
 - 旧批首组严格加载暴露prior数值指纹差异；补评改用既有显式恢复开关，仅允许bank数值指纹差异，语义/结构验证保持，全部val accuracy必须复现才能测试。没有修改模型实现或历史checkpoint。
+- 补评36/36完成，全部旧val accuracy复现；两批均为grouped10_layer_residual（当前模型元数据逐checkpoint验证通过），不是mean50。36组等权test均值旧批74.5168%，paper批74.5252%，差-0.0084个百分点。旧批在12个设置中5高7低；CHMNIST32-shot旧val90.57±1.38对应test88.65±0.78，当前paper test89.16±0.63。完整结果output/historical_tcp_test_comparison/comparison.md及detailed.csv；评估脚本独立只读审查无实质问题，无训练。
+
+2026-09-14：新增独立 Original-style Biomedical TCP 结构消融：TCP.MODE 默认 multitext，original_style 使用冻结 projected Mean-50 类 prototype、共享 512→128→3072 QuickGELU TKE、block 8 单次替换及后续自然传播；只保留注入前 Text Deep Prompt。新增 ORIGINAL_KG_WEIGHT=0.0，可选同次 forward 投影空间 cosine consistency。保留 MultiText 实现/checkpoint 和原 Confusion/MoE 路径，新增定向与回归测试及 README_CN 说明。TKE 461952 参数，新 TCP 包 486528 参数。
+验证结果：Original-style 定向测试 7 passed；现有 MultiText/CoOpVPT/Confusion/MoE/TextVPT/checkpoint 回归 47 passed、1 skipped（未开启真实 BiomedCLIP 权重集成测试）。覆盖 KG 权重 0/8、Confusion 开关、单次 forward、梯度和 checkpoint 隔离；未运行数据集训练。
+2026-09-14：按用户后续要求删除本次 Original-style TCP 的可选 KG：移除 ORIGINAL_KG_WEIGHT 配置、知识一致性损失、训练接线及专用联合返回接口；清理对应测试并更新 README_CN。保留 Mean-50 prototype、共享 TKE、block 8 单次注入，恢复原分类/Confusion loss；此前 KG 记录仅为历史。
+删除 KG 后验证：27 passed, 1 skipped, 2 warnings in 14.98s；覆盖 Original-style 结构与梯度、分类/Confusion loss、MoE 原接口。真实 BiomedCLIP 权重集成测试未启用。
+
+2026-09-14：按用户要求启动当前 Original-style TCP 三数据集完整实验（DermaMNIST/Kvasir/CHMNIST × 4/8/16/32-shot × seed 1/2/3，共36组），固定物理 GPU4，Confusion 关闭，输出 output/original_style_tcp_no_confusion_3datasets_4_32shot。先完成 DermaMNIST 4-shot seed1 smoke（100 epoch，6分58秒，峰值显存3.7GB）确认代码和数据无误，再由 tmux 会话 original-style-tcp-gpu4 串行执行剩余任务；队列脚本为 _manager/run_gpu4.sh。
+
+2026-09-14：按用户要求补充 DermaMNIST seed4（4/8/16/32-shot），训练入口 EXPERIMENT_SEEDS 扩展为 1/2/3/4。主 GPU4 队列 original-style-tcp-gpu4 完成后由 tmux 会话 original-style-tcp-gpu4-seed4 自动接续；seed4 输出仍在 output/original_style_tcp_no_confusion_3datasets_4_32shot/<dataset>/shots_<K>/seed4。汇总时不纳入 seed2，DermaMNIST 各 shot 仅使用 seed1、seed3、seed4。

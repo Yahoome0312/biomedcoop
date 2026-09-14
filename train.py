@@ -44,7 +44,7 @@ import trainers.BiomedCoOp.biomedcoop_pmcclip
 
 FIXED_BATCH_SIZE = 32
 FIXED_NUM_WORKERS = 8
-EXPERIMENT_SEEDS = (1, 2, 3)
+EXPERIMENT_SEEDS = (1, 2, 3, 4)
 
 
 def print_args(args, cfg):
@@ -120,6 +120,7 @@ def extend_cfg(cfg):
     # From-scratch multi-description TCP path.
     cfg.TRAINER.TCP = CN()
     cfg.TRAINER.TCP.ENABLED = True
+    cfg.TRAINER.TCP.MODE = "multitext"
     cfg.TRAINER.TCP.BOTTLENECK_DIM = 128
     cfg.TRAINER.TCP.INSERT_LAYER = 8
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = ""
@@ -253,7 +254,7 @@ if __name__ == "__main__":
         type=int,
         choices=EXPERIMENT_SEEDS,
         default=EXPERIMENT_SEEDS[0],
-        help="experiment seed (fixed to 1, 2 or 3)",
+        help="experiment seed (fixed to 1, 2, 3 or 4)",
     )
     parser.add_argument(
         "--source-domains", type=str, nargs="+", help="source domains for DA/DG"
