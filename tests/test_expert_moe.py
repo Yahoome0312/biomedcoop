@@ -137,10 +137,9 @@ def test_loader_preserves_config_and_uses_strict_historical_loader(monkeypatch, 
     extend_cfg(cfg)
     cfg.OPTIM.NAME = "adamw"
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = "shared_projected.pt"
-    cfg.TRAINER.TCP.LAYER_DESCRIPTION_CACHE = "shared_layer.pt"
     if separate_banks:
         for prefix in ("TCP", "CONF"):
-            for bank in ("DESCRIPTION_CACHE", "LAYER_DESCRIPTION_CACHE"):
+            for bank in ("DESCRIPTION_CACHE",):
                 setattr(cfg.TRAINER.EXPERT_MOE, f"{prefix}_{bank}", f"{prefix}_{bank}.pt")
     cfg.freeze()
     path = tmp_path / "model.pth.tar"
@@ -148,7 +147,7 @@ def test_loader_preserves_config_and_uses_strict_historical_loader(monkeypatch, 
     calls = []
     def build(self, expert_checkpoint=None, rebuild_banks=False):
         prefix = "TCP" if self.cfg.TRAINER.TCP.ENABLED else "CONF"
-        for bank in ("DESCRIPTION_CACHE", "LAYER_DESCRIPTION_CACHE"):
+        for bank in ("DESCRIPTION_CACHE",):
             expected = f"{prefix}_{bank}.pt" if separate_banks else getattr(cfg.TRAINER.TCP, bank)
             assert getattr(self.cfg.TRAINER.TCP, bank) == expected
         calls.append((self.cfg.TRAINER.TCP.ENABLED, self.cfg.TRAINER.CONFUSION_AWARE.ENABLED, expert_checkpoint))

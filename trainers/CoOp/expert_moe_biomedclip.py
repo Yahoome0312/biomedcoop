@@ -19,7 +19,7 @@ def load_expert(cfg, dm, device, checkpoint, tcp_enabled):
     expert_cfg.TRAINER.TCP.ENABLED = tcp_enabled
     expert_cfg.TRAINER.CONFUSION_AWARE.ENABLED = not tcp_enabled
     prefix = "TCP" if tcp_enabled else "CONF"
-    for bank in ("DESCRIPTION_CACHE", "LAYER_DESCRIPTION_CACHE"):
+    for bank in ("DESCRIPTION_CACHE",):
         path = getattr(cfg.TRAINER.EXPERT_MOE, f"{prefix}_{bank}")
         if path:
             setattr(expert_cfg.TRAINER.TCP, bank, path)

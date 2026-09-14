@@ -26,7 +26,7 @@ python train.py \
   --seed 1 \
   --trainer CoOpVPT_BiomedCLIP \
   --dataset-config-file configs/datasets/dermamnist.yaml \
-  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml \
+  --config-file configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml \
   DATASET.NUM_SHOTS 4
 ```
 
@@ -34,7 +34,7 @@ python train.py \
 
 ## TCP 消融
 
-TCP 默认开启，因此上面的命令就是 TCP-on 对照组。TCP-off 保留相同的 Full Confusion 和 VPT 中已有的 Text Deep Prompt，只将 TCP 类别描述残差固定为零，并冻结 TCP 投影和门控参数；不会增加第二套 Text Prompt。CoOp、Visual/Text VPT、Full Confusion、margin loss、优化器、`OPTIM.LR`、batch、workers、shot 和 seed 均保持不变。
+TCP 默认开启，因此上面的命令就是 TCP-on 对照组。TCP-off 保留相同的 Full Confusion 和 VPT 中已有的 Text Deep Prompt，冻结 TKE 与类别知识 bank，并跳过 TCP token 注入；不会增加第二套 Text Prompt。CoOp、Visual/Text VPT、Full Confusion、margin loss、优化器、`OPTIM.LR`、batch、workers、shot 和 seed 均保持不变。
 
 运行 TCP-off 时，在同一条训练命令末尾增加：
 
@@ -51,7 +51,7 @@ python train.py \
   --seed 1 \
   --trainer CoOpVPT_BiomedCLIP \
   --dataset-config-file configs/datasets/dermamnist.yaml \
-  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml \
+  --config-file configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml \
   DATASET.NUM_SHOTS 4 \
   TRAINER.TCP.ENABLED False
 ```
@@ -74,9 +74,9 @@ TRAINER.CONFUSION_AWARE.ENABLED False
 |---|---|---|
 | CoOp | `CoOp_BiomedCLIP` | 无 |
 | CoOp + Deep Prompt | `CoOpVPT_BiomedCLIP` | `TRAINER.TCP.ENABLED False TRAINER.CONFUSION_AWARE.ENABLED False` |
-| CoOp + Deep Prompt + MT-TCP | `CoOpVPT_BiomedCLIP` | `TRAINER.CONFUSION_AWARE.ENABLED False` |
+| CoOp + Deep Prompt + TCP | `CoOpVPT_BiomedCLIP` | `TRAINER.CONFUSION_AWARE.ENABLED False` |
 | CoOp + Deep Prompt + Confusion Aware | `CoOpVPT_BiomedCLIP` | `TRAINER.TCP.ENABLED False` |
-| CoOp + Deep Prompt + MT-TCP + Confusion Aware | `CoOpVPT_BiomedCLIP` | 无 |
+| CoOp + Deep Prompt + TCP + Confusion Aware | `CoOpVPT_BiomedCLIP` | 无 |
 
 不同组合必须使用不同输出目录。checkpoint 会同时记录 TCP 和 Confusion Aware 状态，不能在不同组合之间交叉恢复或加载。
 
@@ -88,7 +88,7 @@ TRAINER.CONFUSION_AWARE.ENABLED False
 DATA_ROOT=/mnt/nas1/disk09/yuejianwu/biomedcoop/data
 OUTPUT_ROOT=output/full_confusion/tcp_on
 TRAINER=CoOpVPT_BiomedCLIP
-TRAINER_CONFIG=configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml
+TRAINER_CONFIG=configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml
 
 for SHOTS in 1 2 4 8 16 32; do
   for SEED in 1 2 3; do
@@ -114,7 +114,7 @@ done
 |---|---|---|
 | BiomedCoOp | `BiomedCoOp_BiomedCLIP` | `configs/trainers/BiomedCoOp/few_shot/dermamnist.yaml` |
 | 原生 CoOp | `CoOp_BiomedCLIP` | `configs/trainers/CoOp/dermamnist_native.yaml` |
-| CoOp + Visual/Text VPT + MT-TCP + Full Confusion | `CoOpVPT_BiomedCLIP` | `configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml` |
+| CoOp + Visual/Text VPT + TCP + Full Confusion | `CoOpVPT_BiomedCLIP` | `configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml` |
 
 ## Full Confusion
 
@@ -190,7 +190,7 @@ GPU_ID=0
 TCP_CKPT=/absolute/path/to/tcp_run/prompt_parameters/model-best.pth.tar
 CONF_CKPT=/absolute/path/to/conf_run/prompt_parameters/model-best.pth.tar
 COMMON=(--root /absolute/path/to/data --dataset-config-file configs/datasets/chmnist.yaml
-  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml --seed 1)
+  --config-file configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml --seed 1)
 MOE=(TRAINER.EXPERT_MOE.ENABLED True DATASET.NUM_SHOTS 4
   TRAINER.EXPERT_MOE.TCP_CHECKPOINT "$TCP_CKPT"
   TRAINER.EXPERT_MOE.CONF_CHECKPOINT "$CONF_CKPT")
@@ -208,7 +208,7 @@ done
 
 `tests/test_expert_moe.py` 使用微型 tower 运行原 `CustomCLIP.forward`，检查专家独立与冻结、梯度隔离、优化一步前后专家参数逐值相等、初始及训练后权重归一化、单专家旁路、Confusion 自身预测选 pair 且不接收 GT，以及加载配置隔离。真实数据上的性能是否超过单专家仍需完成 Router 训练和对照评估。
 
-历史专家可分别配置 `TRAINER.EXPERT_MOE.TCP_DESCRIPTION_CACHE`、`TCP_LAYER_DESCRIPTION_CACHE`、`CONF_DESCRIPTION_CACHE`、`CONF_LAYER_DESCRIPTION_CACHE`，以恢复各自训练时的 bank；为空时沿用 `TRAINER.TCP` 的缓存设置。优先使用与历史 checkpoint 校验一致的现存缓存，默认严格校验全部元数据。首组实验的 TCP 缓存来自 `output/selective_confusion_v1/confusion_predictions/_cache/dermamnist/`。
+历史专家可分别配置 `TRAINER.EXPERT_MOE.TCP_DESCRIPTION_CACHE`、`CONF_DESCRIPTION_CACHE`，以恢复各自训练时的 bank；为空时沿用 `TRAINER.TCP` 的缓存设置。优先使用与历史 checkpoint 校验一致的现存缓存，默认严格校验全部元数据。首组实验的 TCP 缓存来自 `output/selective_confusion_v1/confusion_predictions/_cache/dermamnist/`。
 
 当原 checkpoint 未持久化 bank、只能从冻结 BiomedCLIP 与原描述重建时，可显式设置 `TRAINER.EXPERT_MOE.REBUILD_BANKS=True`。此模式仅允许数值 prior/pair feature 字节指纹不同并打印提示；不修改历史文件或文本聚合，仍严格校验参数结构、类别/描述/模型/方法/协议，并从 checkpoint 所在运行目录的 `initialization_manifest.json` 校验原 Confusion pair 描述来源。原单分支默认校验行为保持不变。本次实验在 Router 训练前对照历史 validation accuracy，且逐样本核对 Confusion 的 final prediction 与 pair_first/pair_second；test 不用于恢复核对。
 
@@ -225,16 +225,16 @@ TCP基线来源澄清（2026-09-14更新）：上述MoE使用`paper_3datasets_4m
 旧TCP批次补评已完成36/36组，每组val accuracy均复现。两批TCP的聚合元数据均为grouped10_layer_residual，不是mean50；旧批test与paper批test在12个设置中5高7低，整体等权均值分别74.52%和74.53%。旧表CHMNIST32-shot90.57±1.38是val，实际test为88.65±0.78。详见[旧批TCP测试集对比](output/historical_tcp_test_comparison/comparison.md)，逐seed checkpoint路径和成绩见同目录detailed.csv。恢复允许bank数值指纹差异，不宣称bank逐位相同。
 
 
-### Original-style Biomedical TCP（结构消融）
+### Biomedical TCP（共享 TKE）
 
-在现有运行命令末尾设置 `TRAINER.TCP.MODE original_style`；默认 `multitext` 保留原 LayerBasis + XProto 路径及旧 checkpoint。`TRAINER.TCP.INSERT_LAYER` 默认 8（从 0 编号）。数据、采样、CoOp、Visual Deep Prompt、优化器和训练日程不变。
+TCP 现在只有一条实现路径，不提供实现模式选择项。`TRAINER.TCP.INSERT_LAYER` 默认值为 8（从 0 编号）；数据、采样、CoOp、Visual Deep Prompt、优化器和训练日程保持不变。
 
-新模块 `models/original_style_tcp.py` 使用冻结 BiomedCLIP 对每条 description 独立编码后的最终投影特征 `[C,50,D_proj]`，按类别计算 `w_c = normalize(mean_i(t_ci))`，注册为不可训练 buffer。它复用 projected description cache，不构建中间层 description bank。共享 TKE 为 `Linear(D_proj,D_proj//4) → QuickGELU → Linear(D_proj//4,4*hidden_dim)`，直接 reshape 为 `[C,4,hidden_dim]`；默认维度为 `512→128→3072→[C,4,768]`。
+`models/original_style_tcp.py` 使用冻结 BiomedCLIP 对每条 description 独立编码后的最终投影特征 `[C,50,D_proj]`，按类别计算 `w_c = normalize(mean_i(t_ci))`，并将 description bank 与类别 prototype 注册为不可训练 buffer。共享 TKE 为 `Linear(D_proj,D_proj//4) → QuickGELU → Linear(D_proj//4,4*hidden_dim)`，直接 reshape 为 `[C,4,hidden_dim]`；默认维度为 `512→128→3072→[C,4,768]`。
 
-block 0–7 沿用 CoOp + Text Deep Prompt，block 8 输入处把 CLS 后的位置 1–4 替换为该类别的 TKE tokens。block 9–11 不调用 prompt replacement，所有 hidden states 自然传播。Original-style 不含 5×10 grouping、LayerBasis、XProto 残差组合、B+Delta、跨类别 centering、token norm matching、layer gate 或多层 TCP 重注入。Mean-50 prototype 的归一化仍保留。
+block 0–7 沿用 CoOp + Text Deep Prompt；block 8 输入处把 CLS 后的位置 1–4 替换为该类别的 TKE tokens。block 9–11 不调用 prompt replacement，所有 hidden states 自然传播。当前 TCP 不含 5×10 grouping、LayerBasis、XProto 残差组合、B+Delta、跨类别 centering、token norm matching、layer gate 或多层 TCP 重注入；Mean-50 prototype 的归一化仍保留。
 
-backbone 与 description bank 均冻结，仅训练原 CoOp context、Visual Deep Prompt、注入前必要的 Text Deep Prompt 和共享 TKE。TKE 含 bias 共 461,952 参数；默认 8 层 Text Deep Prompt 共 24,576 参数；新 TCP 参数包合计 486,528，相比现有 MultiText 包 531,589 减少 45,061。CoOp/视觉/Confusion 参数量不变。`TCP.ENABLED=False` 时新模式使用完整普通 Text Deep Prompt 路径并冻结 TKE。
+BiomedCLIP backbone、description bank 和 class prototype 均冻结，仅训练 CoOp context、Visual Deep Prompt、注入前必要的 Text Deep Prompt 和共享 TKE。TKE 含 bias 共 461,952 参数；默认 8 层 Text Deep Prompt 共 24,576 参数；TCP 参数包合计 486,528。`TCP.ENABLED=False` 时保留完整普通 Text Deep Prompt 路径并冻结 TKE。
 
-Original-style 仅改变 TCP 结构，沿用现有分类目标；启用 Confusion 时保留原有 Confusion loss 和路由，不增加额外知识一致性损失。新旧 TCP 参数包使用不同 metadata 校验，禁止交叉加载；现有 MultiText checkpoint 字段不变。
+TCP 仅改变类别知识 prompt 结构，沿用现有分类目标；启用 Confusion 时保留原有 Confusion loss 和路由，不增加知识一致性损失。checkpoint 只校验当前 TCP 的结构元数据，不再提供已删除实现的加载路径。
 
-局部验证：`python -m pytest tests/test_original_style_tcp.py tests/test_multitext_tcp.py tests/test_coop_vpt_biomedclip.py tests/test_confusion_aware.py tests/test_expert_moe.py tests/test_text_vpt.py tests/test_dual_best_checkpoints.py -q`。测试使用小型 BERT，无需训练或下载 backbone。
+局部验证：`python -m pytest tests/test_original_style_tcp.py tests/test_coop_vpt_biomedclip.py tests/test_confusion_aware.py tests/test_expert_moe.py tests/test_text_vpt.py tests/test_dual_best_checkpoints.py -q`。测试使用小型 BERT，无需训练或下载 backbone。

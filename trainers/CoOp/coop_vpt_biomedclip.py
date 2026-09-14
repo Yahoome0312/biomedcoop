@@ -1,4 +1,4 @@
-"""From-scratch CoOp + Visual/Text VPT trainer with optional MT-TCP.
+"""From-scratch CoOp + Visual/Text VPT trainer with optional TCP.
 
 The optional confusion-aware path uses a fixed support-only soft probability
 prior and current-image global/local evidence. There is one classifier and a
@@ -32,11 +32,9 @@ from models.confusion_aware import (
     confusion_margin_loss,
     select_hard_negative,
 )
-from models.original_style_tcp import OriginalStyleTCPBertTextEncoder
-from models.multitext_tcp import (
-    MultiTextTCPBertTextEncoder,
+from models.original_style_tcp import (
+    OriginalStyleTCPBertTextEncoder,
     build_frozen_description_bank,
-    build_frozen_layer_description_bank,
     validate_tcp_checkpoint_state,
 )
 from trainers.CoOp.coop_biomedclip import CustomCLIP
@@ -116,19 +114,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
         tcp = cfg.TRAINER.TCP
         confusion = cfg.TRAINER.CONFUSION_AWARE
-        mode = getattr(tcp, "MODE", "multitext")
-        if mode not in {"multitext", "original_style"}:
-            raise ValueError("TCP.MODE must be multitext or original_style")
-        if mode == "multitext":
-            expected = {
-                "BOTTLENECK_DIM": 128,
-                "INSERT_LAYER": 8,
-            }
-            for field, value in expected.items():
-                if int(getattr(tcp, field)) != value:
-                    raise ValueError("MT-TCP requires {}={}".format(field, value))
-            if abs(float(tcp.GATE_INIT) - 0.05) > 1e-12:
-                raise ValueError("MT-TCP requires GATE_INIT=0.05")
+        if int(tcp.INSERT_LAYER) < 1:
+            raise ValueError("Original-style TCP INSERT_LAYER must be at least one")
         if confusion.ENABLED:
             if float(confusion.GAMMA) < 0:
                 raise ValueError("GAMMA must be non-negative")
@@ -165,9 +152,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
         tcp = cfg.TRAINER.TCP
         self.tcp_enabled = bool(tcp.ENABLED)
-        num_tokens = int(self.model.prompt_learner.n_ctx)
         description_batch_size = int(cfg.DATALOADER.TEST.BATCH_SIZE)
-        projected_bank, descriptions = build_frozen_description_bank(
+        projected_bank, _descriptions = build_frozen_description_bank(
             biomedclip_model,
             self.model.prompt_learner.tokenizer,
             classnames,
@@ -176,39 +162,15 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             batch_size=description_batch_size,
             cache_path=tcp.DESCRIPTION_CACHE or None,
         )
-        self.tcp_mode = getattr(tcp, "MODE", "multitext")
-        if self.tcp_mode == "original_style":
-            self.model.text_encoder = OriginalStyleTCPBertTextEncoder(
-                biomedclip_model.text, projected_bank, classnames,
-                insert_layer=tcp.INSERT_LAYER, enabled=self.tcp_enabled,
-            )
-        else:
-            layer_bank, layer_descriptions = build_frozen_layer_description_bank(
-                biomedclip_model,
-                self.model.prompt_learner.tokenizer,
-                classnames,
-                BIOMEDCOOP_TEMPLATES,
-                insert_layer=tcp.INSERT_LAYER,
-                expected_count=DESCRIPTION_COUNT,
-                batch_size=description_batch_size,
-                cache_path=tcp.LAYER_DESCRIPTION_CACHE or None,
-            )
-            if layer_descriptions != descriptions:
-                raise RuntimeError("Projected and layer description order mismatch")
-            self.model.text_encoder = MultiTextTCPBertTextEncoder(
-                biomedclip_model.text,
-                layer_description_bank=layer_bank,
-                projected_description_bank=projected_bank,
-                descriptions=descriptions,
-                classnames=classnames,
-                num_tokens=num_tokens,
-                bottleneck_dim=tcp.BOTTLENECK_DIM,
-                insert_layer=tcp.INSERT_LAYER,
-                gate_init=tcp.GATE_INIT,
-            )
+        # TCP is the shared-TKE, mean-50 class-prototype implementation.
+        self.model.text_encoder = OriginalStyleTCPBertTextEncoder(
+            biomedclip_model.text,
+            projected_bank,
+            classnames,
+            insert_layer=tcp.INSERT_LAYER,
+            enabled=self.tcp_enabled,
+        )
         tcp_prompt = self.model.text_encoder.tcp_prompt
-        if not self.tcp_enabled and self.tcp_mode == "multitext":
-            tcp_prompt.set_residual_scale(0.0)
 
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)

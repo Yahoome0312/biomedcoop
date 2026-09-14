@@ -79,3 +79,7 @@
 2026-09-14：按用户要求启动当前 Original-style TCP 三数据集完整实验（DermaMNIST/Kvasir/CHMNIST × 4/8/16/32-shot × seed 1/2/3，共36组），固定物理 GPU4，Confusion 关闭，输出 output/original_style_tcp_no_confusion_3datasets_4_32shot。先完成 DermaMNIST 4-shot seed1 smoke（100 epoch，6分58秒，峰值显存3.7GB）确认代码和数据无误，再由 tmux 会话 original-style-tcp-gpu4 串行执行剩余任务；队列脚本为 _manager/run_gpu4.sh。
 
 2026-09-14：按用户要求补充 DermaMNIST seed4（4/8/16/32-shot），训练入口 EXPERIMENT_SEEDS 扩展为 1/2/3/4。主 GPU4 队列 original-style-tcp-gpu4 完成后由 tmux 会话 original-style-tcp-gpu4-seed4 自动接续；seed4 输出仍在 output/original_style_tcp_no_confusion_3datasets_4_32shot/<dataset>/shots_<K>/seed4。汇总时不纳入 seed2，DermaMNIST 各 shot 仅使用 seed1、seed3、seed4。
+
+[2026-09-14] 修正补充实验范围：用户明确仅补跑 DermaMNIST 4-shot seed4；取消原先等待中的 DermaMNIST 8/16/32-shot seed4 计划，seed4 runner 已改为仅执行 shots=4。其他数据集和 shot/seed 组合保持不变；DermaMNIST 均值按 seed1、3、4 统计并排除 seed2。
+[2026-09-14] 修正 seed4 等待脚本的主队列 session 判断：改为精确匹配 `original-style-tcp-gpu4`，避免把自身 `original-style-tcp-gpu4-seed4` 作为前缀误判为主队列仍在运行。主队列已完成后，补充任务可正常启动。
+[2026-09-14] 修正 DermaMNIST 4-shot seed4 runner 的 Python 环境路径；实际环境为 `/mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop`。此前因路径不存在而立即退出，未启动训练；修正后重新执行。
