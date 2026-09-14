@@ -130,7 +130,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             if float(confusion.LAMBDA_CONF) < 0:
                 raise ValueError("LAMBDA_CONF must be non-negative")
 
-    def build_model(self):
+    def build_model(self, expert_checkpoint=None, rebuild_banks=False):
         cfg = self.cfg
         trainer_cfg = cfg.TRAINER.COOPVPT
         classnames = self.dm.dataset.classnames
@@ -218,7 +218,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             for name, parameter in self.model.named_parameters()
             if parameter.requires_grad
         ]
-        base_fingerprint, base_entries = _parameter_fingerprint(base_named)
+        if expert_checkpoint is None:
+            base_fingerprint, base_entries = _parameter_fingerprint(base_named)
 
         confusion_adapter = None
         self.pair_description_metadata = None
@@ -258,6 +259,14 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             tcp=tcp_prompt,
             confusion=confusion_adapter,
         )
+        if expert_checkpoint is not None:
+            self.load_prompt_checkpoint(
+                expert_checkpoint, check_bank_fingerprints=not rebuild_banks
+            )
+            self.model.requires_grad_(False)
+            self.model.eval()
+            return
+
         trainable_parameters = [
             parameter for parameter in self.model.parameters() if parameter.requires_grad
         ]
@@ -689,7 +698,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             self.scaler.load_state_dict(checkpoint["scaler"])
         return start_epoch
 
-    def _validate_checkpoint_metadata(self, checkpoint):
+    def _validate_checkpoint_metadata(self, checkpoint, check_bank_fingerprints=True):
         if checkpoint.get("protocol") != self.protocol:
             raise RuntimeError("Checkpoint training protocol does not match current run")
         if bool(checkpoint.get("tcp_enabled", True)) != self.tcp_enabled:
@@ -701,18 +710,26 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 "feature_fingerprint"
             ]
             if checkpoint.get("pair_feature_fingerprint") != expected_pair_features:
-                raise RuntimeError(
-                    "Checkpoint LLM pair features do not match current run"
-                )
+                if check_bank_fingerprints:
+                    raise RuntimeError(
+                        "Checkpoint LLM pair features do not match current run"
+                    )
+                print("Rebuilt Confusion bank: numerical feature fingerprint differs; description source validated")
         validate_tcp_checkpoint_state(
             checkpoint["state_dict"],
             self._unwrapped_model().text_encoder.tcp_prompt,
             prefix="tcp.",
+            check_prior_fingerprint=check_bank_fingerprints,
         )
 
-    def load_prompt_checkpoint(self, path):
+    def load_prompt_checkpoint(self, path, check_bank_fingerprints=True):
         checkpoint = load_checkpoint(str(path))
-        self._validate_checkpoint_metadata(checkpoint)
+        if not check_bank_fingerprints and self.confusion_enabled:
+            manifest_path = Path(path).parent.parent / "initialization_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("pair_description_fingerprint") != self.pair_description_metadata["description_fingerprint"]:
+                raise RuntimeError("Historical Confusion description source does not match current run")
+        self._validate_checkpoint_metadata(checkpoint, check_bank_fingerprints)
         self.prompt_parameters.load_state_dict(checkpoint["state_dict"], strict=True)
         return checkpoint
 

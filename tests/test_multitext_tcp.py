@@ -301,3 +301,16 @@ def test_layer_description_bank_matches_injection_space_and_cache(tmp_path):
     assert tuple(ordered) == ("zero", "one")
     assert torch.equal(bank, cached)
     assert torch.allclose(bank.norm(dim=-1), torch.ones(2, 2), atol=1e-6)
+
+
+def test_rebuilt_bank_allows_only_numeric_prior_difference():
+    _, adapter, _, _ = _adapter()
+    state = {"tcp." + k: v.clone() for k, v in adapter.tcp_prompt.state_dict().items()}
+    different = torch.tensor(list(("0" * 64).encode("ascii")), dtype=torch.uint8)
+    state["tcp._meta_prior_fingerprint"] = different
+    with pytest.raises(RuntimeError, match="prior_fingerprint"):
+        validate_tcp_checkpoint_state(state, adapter.tcp_prompt)
+    validate_tcp_checkpoint_state(state, adapter.tcp_prompt, check_prior_fingerprint=False)
+    state["tcp._meta_description_fingerprint"] = different
+    with pytest.raises(RuntimeError, match="description_fingerprint"):
+        validate_tcp_checkpoint_state(state, adapter.tcp_prompt, check_prior_fingerprint=False)

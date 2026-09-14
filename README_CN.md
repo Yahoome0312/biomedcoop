@@ -168,3 +168,56 @@ Semantic 特征来自数据集对应的有向类别对文件：DermaMNIST、Kvas
 
 队列：`output/original_tcp_confusion_joint_3datasets_4_32shot/_manager/run.py`；tmux会话`original-joint-36`。输出为`<dataset>/both/shots_<K>/seed<S>/`，`evaluation/accuracy`和`evaluation/balanced_accuracy`保存两种验证选模的测试结果。`_manager/status.json`记录进度，`_summary`保存逐seed和均值/标准差CSV及历史对照。对话在确认首任务训练后结束，tmux继续运行。
 
+
+## 冻结双专家 Linear MoE（最小验证版）
+
+入口为 `TRAINER.EXPERT_MOE.ENABLED=True`，自动选择 `ExpertMoE_BiomedCLIP`。
+`TCP_CHECKPOINT` 与 `CONF_CHECKPOINT` 接受历史 `prompt_parameters/model-best.pth.tar` 文件路径；必须来自相同 dataset、classnames、shots、seed 和模型配置。沿用原 checkpoint 的严格结构、TCP bank 元数据与 Confusion prediction-routing protocol 校验，不兼容旧 GT-routing checkpoint。
+
+两个专家分别通过原 CoOpVPT 构建器恢复独立的 CoOp、Visual Deep Prompt、Text Deep Prompt 和对应 adapter。TCP 专家关闭 Confusion；Confusion 专家将 TCP residual scale 设为 0，保留原文本聚合与自己的 pre-confusion prediction routing。历史 checkpoint 保存的是完整可学习 Prompt bundle，冻结 BiomedCLIP 和 description/pair banks 仍由原加载路径重建、校验。第一版使用两份独立 backbone，便于保证全部参数对象独立。
+
+两个专家 `requires_grad=False`，始终 eval，并在 `no_grad` 中前向；外层 `.train()` 只使 Router 进入训练状态。输入 image `[B,3,H,W]`，专家 logits `[B,C]`。Router 输入为 `[softmax(tcp_logits), softmax(conf_logits), abs(p_tcp-p_conf)]`，形状 `[B,3C]`；唯一可学习层为零初始化 `Linear(3C,2,bias=True)`，共 `6C+2` 个参数（8 类为 50）。softmax 后输出 `[B,2]`，两列分别为 TCP/Confusion 权重，初始均为 0.5、每行和为 1。
+
+概率融合为 `p_final=w_tcp*p_tcp+w_conf*p_conf`，MoE forward 返回 `log(p_final.clamp_min(1e-8))`；唯一训练目标为该输出的 `F.nll_loss(output,label)`。Router 与概率运算使用 fp32。optimizer/checkpoint 仅包含 Router；没有专家辅助 loss 或专家更新。`return_weights=True` 可在 MoE 模式返回 `(log_probs, weights)`。
+
+继续使用原全部 few-shot train dataset、sampler、augmentation、seed、batch size、optimizer、LR、scheduler 与 MAX_EPOCH。只在 MoE DataLoader 保留最后不足一个 batch 的样本，不新建 split。每个 epoch 只用既有 validation accuracy 选择 `router/model-best.pth.tar`；测试不参与训练或选模。原 YAML 的 `SKIP_FINAL_TEST=True` 保留，可显式 eval 最佳 Router。`MODE` 支持 `linear_moe`、`tcp_only`、`conf_only`，两个单专家模式只用于 `--eval-only`，直接返回原 logits、不需要 Router checkpoint。
+
+推荐命令（占位路径替换为同一实验的实际路径，GPU_ID 选一张可用卡；shots 可为 4/8/16/32）：
+
+```bash
+conda activate /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop
+GPU_ID=0
+TCP_CKPT=/absolute/path/to/tcp_run/prompt_parameters/model-best.pth.tar
+CONF_CKPT=/absolute/path/to/conf_run/prompt_parameters/model-best.pth.tar
+COMMON=(--root /absolute/path/to/data --dataset-config-file configs/datasets/chmnist.yaml
+  --config-file configs/trainers/CoOp/dermamnist_native_vpt_multitext_tcp.yaml --seed 1)
+MOE=(TRAINER.EXPERT_MOE.ENABLED True DATASET.NUM_SHOTS 4
+  TRAINER.EXPERT_MOE.TCP_CHECKPOINT "$TCP_CKPT"
+  TRAINER.EXPERT_MOE.CONF_CHECKPOINT "$CONF_CKPT")
+CUDA_VISIBLE_DEVICES=$GPU_ID python train.py "${COMMON[@]}" \
+  --output-dir output/linear_moe/chmnist/shots_4/seed1 "${MOE[@]}"
+CUDA_VISIBLE_DEVICES=$GPU_ID python train.py "${COMMON[@]}" --eval-only \
+  --model-dir output/linear_moe/chmnist/shots_4/seed1 \
+  --output-dir output/linear_moe/chmnist/shots_4/seed1/test "${MOE[@]}" TEST.SPLIT test
+for MODE in tcp_only conf_only; do
+  CUDA_VISIBLE_DEVICES=$GPU_ID python train.py "${COMMON[@]}" --eval-only \
+    --output-dir output/linear_moe/chmnist/shots_4/seed1/$MODE \
+    "${MOE[@]}" TRAINER.EXPERT_MOE.MODE "$MODE" TEST.SPLIT test
+done
+```
+
+`tests/test_expert_moe.py` 使用微型 tower 运行原 `CustomCLIP.forward`，检查专家独立与冻结、梯度隔离、优化一步前后专家参数逐值相等、初始及训练后权重归一化、单专家旁路、Confusion 自身预测选 pair 且不接收 GT，以及加载配置隔离。真实数据上的性能是否超过单专家仍需完成 Router 训练和对照评估。
+
+历史专家可分别配置 `TRAINER.EXPERT_MOE.TCP_DESCRIPTION_CACHE`、`TCP_LAYER_DESCRIPTION_CACHE`、`CONF_DESCRIPTION_CACHE`、`CONF_LAYER_DESCRIPTION_CACHE`，以恢复各自训练时的 bank；为空时沿用 `TRAINER.TCP` 的缓存设置。优先使用与历史 checkpoint 校验一致的现存缓存，默认严格校验全部元数据。首组实验的 TCP 缓存来自 `output/selective_confusion_v1/confusion_predictions/_cache/dermamnist/`。
+
+当原 checkpoint 未持久化 bank、只能从冻结 BiomedCLIP 与原描述重建时，可显式设置 `TRAINER.EXPERT_MOE.REBUILD_BANKS=True`。此模式仅允许数值 prior/pair feature 字节指纹不同并打印提示；不修改历史文件或文本聚合，仍严格校验参数结构、类别/描述/模型/方法/协议，并从 checkpoint 所在运行目录的 `initialization_manifest.json` 校验原 Confusion pair 描述来源。原单分支默认校验行为保持不变。本次实验在 Router 训练前对照历史 validation accuracy，且逐样本核对 Confusion 的 final prediction 与 pair_first/pair_second；test 不用于恢复核对。
+
+首组实测（GPU4，DermaMNIST 4-shot seed1，100 epoch）：validation选出的epoch1 Router在test上accuracy为63.79%，TCP为62.04%、Confusion为63.34%；对应balanced accuracy为42.71%、43.94%、34.82%。仅有单组accuracy小幅收益，尚不足以证明全面改进。结果及专家恢复核对记录位于`output/linear_moe/dermamnist/shots_4/seed1/`。
+
+全部36组Linear MoE队列入口为 `output/linear_moe/_manager/run_all.py`，固定GPU4串行执行，复用已经完成的实验。`--check-only`检查所需历史文件。队列先完成Kvasir/CHMNIST 32-shot真实优化步预运行（DermaMNIST已有完整结果），再训练剩余配置；每组仍运行100epoch，按validation accuracy选模并测试三个模式。汇总只关注accuracy，输出 `output/linear_moe/accuracy_summary.csv` 和 `accuracy_summary.md`；进度见 `_manager/status.json`，运行中15分钟心跳、任务退出立即接续。
+
+截至2026-09-14 07:54，Linear MoE的36/36组实验全部完成，无失败/重试。按三个seed均值比较，12个dataset×shot设置有11个优于最佳单专家，唯一例外是DermaMNIST32-shot（-0.07个百分点）。逐seed对比为26胜、5平、5负，平均较同seed最佳单专家提升0.65个百分点。36组等权test accuracy为TCP74.53%、Confusion75.66%、MoE76.88%。完整均值±样本标准差、逐seed结果、选模epoch及耗时见[完整实验报告](output/linear_moe/full_experiment_report.md)。19/36组最佳Router为epoch1；本次没有固定50/50融合对照，因此尚不能单独归因于动态路由学习。
+
+TCP基线来源澄清（2026-09-14更新）：上述MoE使用`paper_3datasets_4methods/coop_deep_prompt_mttcp`，36组TCP重评test accuracy与该批原始记录逐seed一致。用户旧表三个数据集全部12个均值/标准差已定位到`coop_deep_prompt_mttcp_gpu2_4_32shot`的best_validation_accuracy.json，即最佳验证集成绩，不是测试集成绩；对应36个checkpoint均存在。两批均为grouped10/LayerBasis版本，不能把旧表当成mean50测试结果，也不能将旧表与MoE测试结果直接比较。补测入口为`output/historical_tcp_test_comparison/evaluate.py`，使用GPU4，仅加载validation accuracy最佳checkpoint并验证恢复后评估test，不训练。
+
+六方法统一结果见[核对表](output/linear_moe/six_method_accuracy_verified.md)：从216条原始test记录重算，使用validation accuracy选模和3个seed样本标准差；包含CoOp、CoOp+视觉/文本Deep Prompt、TCP、预测路由Confusion、联合TCP+Confusion与冻结专家Linear MoE。TCP明确为paper批次grouped10/LayerBasis版本，不混入旧TCP验证集表或mean50结果；逐seed原始文件路径保存在six_method_accuracy_detailed.csv。

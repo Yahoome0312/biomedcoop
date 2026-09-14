@@ -566,7 +566,7 @@ class MultiTextTCPBertTextEncoder(nn.Module):
         return projected
 
 
-def validate_tcp_checkpoint_state(state_dict, tcp_prompt, prefix="tcp."):
+def validate_tcp_checkpoint_state(state_dict, tcp_prompt, prefix="tcp.", check_prior_fingerprint=True):
     """Reject incomplete or incompatible final TCP prompt bundles."""
 
     expected = tcp_prompt.checkpoint_metadata()
@@ -583,6 +583,9 @@ def validate_tcp_checkpoint_state(state_dict, tcp_prompt, prefix="tcp."):
             else _decode_hash(tensor)
         )
         if actual != expected[field]:
+            if field == "prior_fingerprint" and not check_prior_fingerprint:
+                print("Rebuilt TCP bank: numerical prior fingerprint differs; semantic metadata validated")
+                continue
             raise RuntimeError(
                 "TCP checkpoint {} mismatch: expected {!r}, got {!r}".format(
                     field, expected[field], actual
