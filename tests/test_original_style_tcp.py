@@ -145,46 +145,6 @@ def test_tcp_config_has_no_implementation_mode():
     cfg = get_cfg_default()
     extend_cfg(cfg)
     assert "MODE" not in cfg.TRAINER.TCP
-    assert "LAYER_DESCRIPTION_CACHE" not in cfg.TRAINER.TCP
+    assert "CONFUSION_AWARE" not in cfg.TRAINER
+    assert "EXPERT_MOE" not in cfg.TRAINER
     assert cfg.TRAINER.TCP.INSERT_LAYER == 8
-
-
-@pytest.mark.parametrize("confusion", [False, True])
-def test_training_classification_and_confusion_preservation(confusion):
-    from test_coop_vpt_biomedclip import _tcp_ablation_cfg
-    from test_expert_moe import ConfusionSpy, expert
-    from trainers.CoOp.coop_vpt_biomedclip import CoOpVPT_BiomedCLIP
-
-    trainer = object.__new__(CoOpVPT_BiomedCLIP)
-    trainer.cfg = _tcp_ablation_cfg(True)
-    trainer.check_cfg(trainer.cfg)
-    trainer.tcp_enabled = True
-    trainer.confusion_enabled = confusion
-    trainer.model = expert(confusion)
-    if confusion:
-        class TrainingConfusionSpy(ConfusionSpy):
-            def forward(self, images, patches, text, base, scale, first):
-                logits, details = super().forward(
-                    images, patches, text, base, scale, first
-                )
-                details["pair_first"] = first
-                return logits, details
-
-        trainer.model.confusion_adapter = TrainingConfusionSpy()
-    calls = []
-    trainer.model.text_encoder.register_forward_hook(lambda *args: calls.append(1))
-    labels = torch.tensor([0, 1, 2])
-    _, losses, _ = trainer._compute_training_loss(torch.randn(3, 3), labels)
-    expected = losses["loss_ce"]
-    if confusion:
-        expected = expected + (
-            trainer.cfg.TRAINER.CONFUSION_AWARE.LAMBDA_CONF
-            * losses["loss_confuse"]
-        )
-    assert set(losses) == (
-        {"loss", "loss_ce", "loss_confuse"} if confusion else {"loss", "loss_ce"}
-    )
-    torch.testing.assert_close(losses["loss"], expected)
-    assert len(calls) == 1
-    losses["loss"].backward()
-    assert trainer.model.prompt_learner.ctx.grad.norm() > 0

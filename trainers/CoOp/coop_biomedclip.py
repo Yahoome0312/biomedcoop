@@ -155,74 +155,38 @@ class PromptLearner(nn.Module):
 
 
 class CustomCLIP(nn.Module):
-    def __init__(self, cfg,classnames, biomedclip_model):
+    def __init__(self, cfg, classnames, biomedclip_model):
         super().__init__()
-        self.prompt_learner = PromptLearner(cfg,classnames, biomedclip_model)
+        self.prompt_learner = PromptLearner(cfg, classnames, biomedclip_model)
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = biomedclip_model.visual
         self.text_encoder = TextEncoder(biomedclip_model)
         self.logit_scale = biomedclip_model.logit_scale
         self.dtype = biomedclip_model.text.transformer.dtype
-        self.confusion_adapter = None
 
     def forward(
         self,
         image,
         return_text_features=False,
         return_features=False,
-        return_confusion_details=False,
-        confusion_anchor=None,
     ):
-        needs_tokens = (
-            self.confusion_adapter is not None
-            and self.confusion_adapter.needs_patch_tokens
-        )
-        if needs_tokens:
-            image_features, patch_tokens = self.image_encoder(
-                image.type(self.dtype), return_tokens=True
-            )
-        else:
-            image_features = self.image_encoder(image.type(self.dtype))
-            patch_tokens = None
-
+        image_features = self.image_encoder(image.type(self.dtype))
         prompts = self.prompt_learner()
-        tokenized_prompts = self.tokenized_prompts
-        text_features = self.text_encoder(prompts,tokenized_prompts)
+        text_features = self.text_encoder(prompts, self.tokenized_prompts)
 
         normalized_images = image_features / image_features.norm(dim=-1, keepdim=True)
         normalized_text = text_features / text_features.norm(dim=-1, keepdim=True)
-
-        logit_scale = self.logit_scale.exp()
-        base_logits = logit_scale * normalized_images @ normalized_text.t()
-        details = None
-        if self.confusion_adapter is None:
-            logits = base_logits
-        else:
-            first = (
-                base_logits.detach().argmax(dim=-1)
-                if confusion_anchor is None
-                else confusion_anchor
-            )
-            logits, details = self.confusion_adapter(
-                image_features,
-                patch_tokens,
-                text_features,
-                base_logits,
-                logit_scale,
-                first,
-            )
-            details["base_prediction"] = base_logits.detach().argmax(dim=-1)
-            details["final_prediction"] = logits.detach().argmax(dim=-1)
+        logits = self.logit_scale.exp() * normalized_images @ normalized_text.t()
 
         if return_features:
             return logits, normalized_text, normalized_images
         if return_text_features:
             return logits, normalized_text
-        if return_confusion_details:
-            return logits, details, base_logits
         return logits
 
+
 @TRAINER_REGISTRY.register()
+
 class CoOp_BiomedCLIP(TrainerX):
 
     def check_cfg(self, cfg):

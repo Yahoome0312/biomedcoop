@@ -20,7 +20,6 @@ import datasets.octmnist
 import trainers.Zeroshot.zeroshot
 import trainers.CoOp.coop_clip
 import trainers.CoOp.coop_biomedclip
-import trainers.CoOp.expert_moe_biomedclip
 import trainers.CoOp.coop_vpt_biomedclip
 import trainers.CoOp.coop_pubmedclip
 import trainers.CoOp.coop_pmcclip
@@ -122,20 +121,6 @@ def extend_cfg(cfg):
     cfg.TRAINER.TCP.ENABLED = True
     cfg.TRAINER.TCP.INSERT_LAYER = 8
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = ""
-    cfg.TRAINER.EXPERT_MOE = CN()
-    cfg.TRAINER.EXPERT_MOE.ENABLED = False
-    cfg.TRAINER.EXPERT_MOE.ROUTER = "linear"
-    cfg.TRAINER.EXPERT_MOE.REBUILD_BANKS = False
-    cfg.TRAINER.EXPERT_MOE.MODE = "linear_moe"
-    cfg.TRAINER.EXPERT_MOE.TCP_CHECKPOINT = ""
-    cfg.TRAINER.EXPERT_MOE.CONF_CHECKPOINT = ""
-    cfg.TRAINER.EXPERT_MOE.TCP_DESCRIPTION_CACHE = ""
-    cfg.TRAINER.EXPERT_MOE.CONF_DESCRIPTION_CACHE = ""
-    cfg.TRAINER.CONFUSION_AWARE = CN()
-    cfg.TRAINER.CONFUSION_AWARE.ENABLED = True
-    cfg.TRAINER.CONFUSION_AWARE.GAMMA = 0.2
-    cfg.TRAINER.CONFUSION_AWARE.LAMBDA_CONF = 1.0
-
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 4  # number of context vectors
     cfg.TRAINER.COCOOP.CSC = False  # class-specific context
@@ -200,12 +185,6 @@ def setup_cfg(args):
     cfg.DATALOADER.NUM_WORKERS = FIXED_NUM_WORKERS
     cfg.SEED = args.seed
 
-    if cfg.TRAINER.EXPERT_MOE.ENABLED:
-        cfg.TRAINER.NAME = "ExpertMoE_BiomedCLIP"
-        cfg.TEST.FINAL_MODEL = "best_val"
-        cfg.TEST.BEST_METRIC = "accuracy"
-        cfg.TEST.SAVE_BEST_METRICS = ["accuracy"]
-        cfg.TEST.NO_TEST = False
     cfg.freeze()
 
     return cfg
@@ -223,7 +202,7 @@ def main(args):
     print("Trainer built successfully.")
 
     if args.eval_only:
-        if not args.model_dir and not (cfg.TRAINER.EXPERT_MOE.ENABLED and cfg.TRAINER.EXPERT_MOE.MODE != "linear_moe"):
+        if not args.model_dir:
             raise ValueError("--eval-only requires --model-dir")
         trainer.load_model(args.model_dir, epoch=args.load_epoch)
         trainer.test()

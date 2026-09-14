@@ -83,3 +83,10 @@
 [2026-09-14] 修正补充实验范围：用户明确仅补跑 DermaMNIST 4-shot seed4；取消原先等待中的 DermaMNIST 8/16/32-shot seed4 计划，seed4 runner 已改为仅执行 shots=4。其他数据集和 shot/seed 组合保持不变；DermaMNIST 均值按 seed1、3、4 统计并排除 seed2。
 [2026-09-14] 修正 seed4 等待脚本的主队列 session 判断：改为精确匹配 `original-style-tcp-gpu4`，避免把自身 `original-style-tcp-gpu4-seed4` 作为前缀误判为主队列仍在运行。主队列已完成后，补充任务可正常启动。
 [2026-09-14] 修正 DermaMNIST 4-shot seed4 runner 的 Python 环境路径；实际环境为 `/mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop`。此前因路径不存在而立即退出，未启动训练；修正后重新执行。
+
+2026-09-14：按用户要求将代码收敛为当前共享 TKE TCP 单一路径。
+- 删除 models/confusion_aware.py、models/expert_moe.py、trainers/CoOp/expert_moe_biomedclip.py 及对应 Confusion/MoE 测试和 confuse_pair 描述文件。
+- 从 train.py、CoOpVPT_BiomedCLIP、CustomCLIP 和 TCP 配置移除 Confusion/MoE 开关、路由、辅助 loss、bank 构建和 checkpoint 筛选逻辑；TCP 不再提供 MODE 选择项。
+- CoOpVPT_BiomedCLIP 仅执行 Mean-50 class prototype、共享 TKE、block 8 单次 replacement 和普通分类 CE；README_CN.md 改为记录当前实现。旧 output 目录保留为历史实验文件，当前训练入口不再读取。
+- 清理 TKE checkpoint validator 的旧兼容参数，仅保留当前共享 TKE 的结构元数据校验。
+- 删除后通过 py_compile；删除后的完整 tests 回归结果为 18 passed、1 skipped、4 warnings。

@@ -149,12 +149,8 @@ def build_frozen_description_bank(
     return bank, ordered
 
 
-def validate_tcp_checkpoint_state(
-    state_dict, tcp_prompt, prefix="tcp.", check_prior_fingerprint=True
-):
-    """Validate the Original-style TCP architecture metadata in a checkpoint."""
-
-    del check_prior_fingerprint  # Kept in the public signature for loader compatibility.
+def validate_tcp_checkpoint_state(state_dict, tcp_prompt, prefix="tcp."):
+    """Validate the shared-TKE TCP architecture metadata in a checkpoint."""
     expected = tcp_prompt.checkpoint_metadata()
     for field, suffix in tcp_prompt.checkpoint_field_map.items():
         key = prefix + suffix

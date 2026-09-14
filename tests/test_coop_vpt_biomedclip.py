@@ -1,7 +1,7 @@
 import os
 
-import torch
 import pytest
+import torch
 from torch import nn
 from timm.models.vision_transformer import VisionTransformer
 
@@ -9,11 +9,7 @@ from dassl.config import get_cfg_default
 from models.biomedclip_loader import load_biomedclip
 from models.vpt import TimmViTVisualPromptEncoder
 from train import extend_cfg
-from trainers.CoOp.coop_vpt_biomedclip import (
-    CoOpVPT_BiomedCLIP,
-    _base_topk_hits,
-    _pair_description_file,
-)
+from trainers.CoOp.coop_vpt_biomedclip import CoOpVPT_BiomedCLIP
 
 
 class _TinyTimmVisual(nn.Module):
@@ -53,7 +49,7 @@ def test_vpt_deep_keeps_sequence_length_and_output_contract():
             hook.remove()
 
     assert output.shape == (2, 16)
-    assert lengths == [22, 22, 22]  # CLS + 16 patches + 5 prompts
+    assert lengths == [22, 22, 22]
 
 
 def test_vpt_can_return_only_image_patch_tokens():
@@ -98,7 +94,7 @@ def test_coop_and_visual_prompt_use_one_adamw_group():
     assert optimizer.param_groups[0]["lr"] == 2e-3
 
 
-def _tcp_ablation_cfg(enabled):
+def _tcp_cfg(enabled=True):
     cfg = get_cfg_default()
     extend_cfg(cfg)
     cfg.OPTIM.NAME = "adamw"
@@ -106,102 +102,35 @@ def _tcp_ablation_cfg(enabled):
     return cfg
 
 
-def test_full_confusion_accepts_tcp_on_and_off():
+@pytest.mark.parametrize("enabled", [False, True])
+def test_tcp_check_cfg_accepts_both_injection_settings(enabled):
     trainer = object.__new__(CoOpVPT_BiomedCLIP)
-    trainer.check_cfg(_tcp_ablation_cfg(True))
-    trainer.check_cfg(_tcp_ablation_cfg(False))
+    trainer.check_cfg(_tcp_cfg(enabled))
 
 
-def test_full_confusion_needs_no_offline_config():
+def test_tcp_is_the_only_optional_prompt_component():
+    cfg = _tcp_cfg()
+    assert "MODE" not in cfg.TRAINER.TCP
+    assert "CONFUSION_AWARE" not in cfg.TRAINER
+    assert "EXPERT_MOE" not in cfg.TRAINER
+    assert cfg.TRAINER.TCP.INSERT_LAYER == 8
+
+
+def test_classification_loss_has_no_auxiliary_branch():
     trainer = object.__new__(CoOpVPT_BiomedCLIP)
-    cfg = _tcp_ablation_cfg(False)
-    assert "BANK_ROOT" not in cfg.TRAINER.CONFUSION_AWARE
-    assert "PRIOR_ALPHA" not in cfg.TRAINER.CONFUSION_AWARE
-    trainer.check_cfg(cfg)
-
-
-@pytest.mark.parametrize("tcp_enabled", [False, True])
-def test_confusion_off_does_not_require_bank_root(tcp_enabled):
-    trainer = object.__new__(CoOpVPT_BiomedCLIP)
-    cfg = _tcp_ablation_cfg(tcp_enabled)
-    cfg.TRAINER.CONFUSION_AWARE.ENABLED = False
-
-    trainer.check_cfg(cfg)
-
-
-def test_confusion_off_uses_only_cross_entropy():
-    trainer = object.__new__(CoOpVPT_BiomedCLIP)
-    trainer.confusion_enabled = False
     trainer.model = lambda image: image
     logits = torch.tensor([[2.0, -1.0], [-0.5, 1.5]], requires_grad=True)
     labels = torch.tensor([0, 1])
 
-    output, losses, details = trainer._compute_training_loss(logits, labels)
+    output, losses = trainer._compute_training_loss(logits, labels)
 
     expected = torch.nn.functional.cross_entropy(logits, labels)
     assert output is logits
     assert set(losses) == {"loss", "loss_ce"}
-    assert torch.equal(losses["loss"], expected)
-    assert torch.equal(losses["loss_ce"], expected)
-    assert details is None
-
-
-def test_confusion_training_uses_prediction_routing_and_gt_excluded_competitor():
-    trainer = object.__new__(CoOpVPT_BiomedCLIP)
-    trainer.confusion_enabled = True
-    trainer.cfg = _tcp_ablation_cfg(False)
-    base_logits = torch.tensor([[2.0, 3.0, 1.0], [1.0, 2.0, 3.0]])
-    output_logits = base_logits.clone().requires_grad_()
-
-    class Model:
-        def __call__(self, image, **kwargs):
-            assert kwargs == {"return_confusion_details": True}
-            base_prediction = base_logits.argmax(dim=1)
-            details = {
-                "pair_first": base_prediction,
-                "pair_second": torch.tensor([0, 1]),
-                "base_prediction": base_prediction,
-                "final_prediction": output_logits.detach().argmax(dim=1),
-            }
-            return output_logits, details, base_logits
-
-    trainer.model = Model()
-    labels = torch.tensor([0, 0])
-    _, losses, details = trainer._compute_training_loss(None, labels)
-
-    assert details["pair_first"].tolist() == [1, 2]
-    assert details["pair_second"].tolist() == [0, 1]
-    assert details["competitor"].tolist() == [1, 2]
-    assert details["competitor"].ne(labels).all()
-    assert set(losses) == {"loss", "loss_ce", "loss_confuse"}
-
-
-def test_base_topk_hits_report_gt_coverage():
-    base_logits = torch.tensor(
-        [[5.0, 4.0, 3.0, 2.0, 1.0, 0.0], [5.0, 4.0, 3.0, 2.0, 1.0, 0.0]]
-    )
-    labels = torch.tensor([1, 4])
-
-    hits = _base_topk_hits(base_logits, labels)
-
-    assert hits[2].tolist() == [True, False]
-    assert hits[5].tolist() == [True, True]
-
-
-@pytest.mark.parametrize(
-    ("dataset_name", "filename"),
-    [
-        ("DermaMNIST", "DermaMNIST.txt"),
-        ("CHMNIST", "CHMNIST.txt"),
-        ("Kvasir", "Kvasir.txt"),
-    ],
-)
-def test_pair_description_file_matches_repository_filename(
-    dataset_name, filename
-):
-    path = _pair_description_file(dataset_name)
-    assert path.name == filename
-    assert path.is_file()
+    torch.testing.assert_close(losses["loss"], expected)
+    torch.testing.assert_close(losses["loss_ce"], expected)
+    losses["loss"].backward()
+    assert logits.grad is not None
 
 
 @pytest.mark.skipif(
