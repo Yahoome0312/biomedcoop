@@ -2,7 +2,7 @@
 
 ## 当前训练主线
 
-本仓库使用冻结的 BiomedCLIP 进行医学图像少样本提示学习。当前 CoOp + Visual/Text VPT 训练器只保留一条共享 TKE TCP 路径；Confusion 和 Expert MoE 代码、配置与测试已移除。数据集、few-shot sampling、augmentation、优化器、scheduler、learning rate、epoch、batch size 和 seed 约束沿用原设置。
+本仓库使用冻结的 BiomedCLIP 进行医学图像少样本提示学习。当前主线为 CoOp + Visual Deep Prompt + Text Deep Prompt + Original-style TCP，并可启用 Competitive Visual Prompt（CVP）；Confusion 和 Expert MoE 代码、配置与测试已移除。数据集、few-shot sampling、augmentation、优化器、scheduler、learning rate、epoch、batch size 和 seed 约束沿用原设置。
 
 训练集使用 K-shot 采样，验证集和测试集保持官方划分。训练、验证和测试的 batch size 固定为 32，num_workers 固定为 8。主实验 seed 为 1、2、3，补充实验可使用 4。
 
@@ -18,7 +18,7 @@ pip install -e ./Dassl.pytorch
 
 ## 单次训练
 
-DermaMNIST 4-shot、seed 1 的 TCP 训练命令：
+DermaMNIST 4-shot、seed 1 的 TCP + CVP 训练命令：
 
 ```bash
 python train.py \
@@ -70,6 +70,43 @@ TRAINER:
     INSERT_LAYER: 8
 ```
 
+## Competitive Visual Prompt
+
+`models/competitive_visual_prompt.py` 复用 TCP 的 frozen Mean-50 class prototype `mu: [C, 512]`。视觉端与文本端对称：不再计算 Base logits、competitor 或 prototype 差值，而是将 `mu_c` 直接送入独立的共享 Visual TKE：
+
+```text
+512 → 128 → QuickGELU → 4 × 768
+```
+
+Visual TKE 输出 `class_visual_prompts: [C, 4, 768]`，随后只在 batch 维扩展为 `[B, C, 4, 768]`；不同样本共享同一类别原型生成的初始视觉 token。Visual TKE 参数量为 461,952，参数不与 TCP Text TKE 共享。视觉 forward 的输入输出和层级路径如下：
+
+```text
+image [B,3,H,W]
+  → patch embedding + VPT block 0–7（每张图只运行一次）
+  → shared_state [B,L,768]
+  → mu [C,512] → Visual TKE → class_visual_prompts [C,4,768]
+  → shared_state 按类别扩展为 [B*C,L,768]
+  → prompts 扩展为 [B*C,4,768]
+  → 仅在 block 8 前替换 prompt slots：[CLS, VisualPrototypePrompt_init, patches]
+  → block 9–11：[CLS, 上一层 VisualPrototypePrompt, 上一层 patches]
+  → final CLS → visual norm/projection → visual_features [B,C,512]
+  → 与对应 TCP text_features [C,512] 做逐类别 cosine logit
+  → logits [B,C] → CE
+```
+
+视觉端现在与 TCP 文本端保持同样的单次 replacement 语义：启用时只创建 block 0–7 的 Visual Deep Prompt 参数；进入 block 8 前，Visual TKE 生成的 4 个 token 替换原视觉 prompt slots，但不替换 CLS 或任何 patch token；block 9–11 不再注入或替换 VPT，直接传播 block 8 更新后的视觉原型 prompt 和 patches。最后删除 prompt slots 后仍由原 CLS/global pooling 产生分类特征，不对视觉原型 prompt 做 pooling。Visual TKE 与 CoOp、block 0–7 Visual/Text Deep Prompt、TCP Text TKE 联合训练；ViT/BERT backbone、visual projection、Mean-50 prototype 和 logit scale 均冻结，loss 只有 CE。关闭视觉原型 prompt 时仍创建并使用完整 12 层 Visual Deep Prompt Base。
+
+```yaml
+TRAINER:
+  COMPETITIVE_VISUAL_PROMPT:
+    ENABLED: True
+    INSERT_LAYER: 8
+    NUM_TOKENS: 4
+    BOTTLENECK_DIM: 128
+```
+
+`TRAINER.COMPETITIVE_VISUAL_PROMPT.ENABLED=False` 时不构建 Visual TKE，并直接走修改前的 Original-style TCP Base forward、checkpoint protocol 和 prompt bundle。
+
 ## 批量运行
 
 可以在服务器 Bash 中循环调用 `train.py`：
@@ -98,12 +135,12 @@ done
 | 方法 | Trainer | 配置文件 |
 |---|---|---|
 | 原生 CoOp | `CoOp_BiomedCLIP` | `configs/trainers/CoOp/dermamnist_native.yaml` |
-| CoOp + Visual/Text VPT + TCP | `CoOpVPT_BiomedCLIP` | `configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml` |
+| CoOp + Visual/Text VPT + TCP + CVP | `CoOpVPT_BiomedCLIP` | `configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml` |
 | BiomedCoOp | `BiomedCoOp_BiomedCLIP` | `configs/trainers/BiomedCoOp/few_shot/dermamnist.yaml` |
 
 ## Checkpoint 与验证
 
-训练 checkpoint 保存 `prompt_parameters` bundle、optimizer、scheduler、AMP scaler 及 TCP 结构元数据。恢复时严格校验 TKE 维度、层数、插入层、token 数和 description bank 元数据；当前代码不提供旧 TCP、Confusion 或 MoE 实现的加载入口。
+训练 checkpoint 保存 `prompt_parameters` bundle、optimizer、scheduler、AMP scaler 及 TCP 结构元数据。恢复时严格校验 TKE 维度、层数、插入层、token 数和 description bank 元数据；当前代码不提供已删除 MultiText TCP、Confusion 或 MoE 实现的加载入口，并保留当前 TKE checkpoint 的固定 protocol 标识。
 
 运行测试：
 

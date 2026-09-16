@@ -1,92 +1,21 @@
-2026-09-07
-- 移除 BiomedCLIP support 离线 confusion bank 的生成脚本、统计/加载函数及 BANK_ROOT、PRIOR_ALPHA 配置。
-- 在线配对仅使用当前基础 logits 的概率，排除锚点后选最大负类；训练使用真实标签锚点，验证/测试使用预测 top-1。
-- 保留 LLM 类别对语义特征、全局/局部融合与 margin loss；删除离线先验分析字段与 checkpoint 元数据，更新在线 protocol，防止误恢复旧实验。
-- README_CN.md 同步训练入口、公式、输入输出和 checkpoint 兼容性；测试更新为在线选择和无离线状态验证。
-- 验证：指定 biocoop 环境执行 python -m pytest tests -q，35 passed、1 skipped；未运行完整训练或数据集评估。
+2026-09-07 no-bank 新实验，删去bank
 
-2026-09-07 no-bank 新实验
-- 用户指定仅 TCP 关闭，Confusion 开启；DermaMNIST/Kvasir/CHMNIST，shots=4,8,16,32，seeds=1,2,3，共36次。
-- 使用当前主线 YAML，100 epoch、LR=0.005、batch=32、workers=8、gamma=0.2、lambda_conf=1.0。
-- output/no_bank_confusion_3datasets_4_32shot/_manager/run.py 调度空闲GPU，每任务一张卡；保存验证 accuracy/balanced_accuracy 最佳模型并分别评估测试集。
-- 调度补充：既有同结构训练峰值显存约3.8GiB；允许在显存占用<12GiB且GPU利用率<10%的卡上启动一个本次任务，每张卡最多一个本次任务，不终止其他任务；汇总脚本自动更新CSV/Markdown。
-- 调度自检修正：任务启动后立即记录PID；汇总失败不停止队列；训练失败归档后从头自动补跑一次，最终仍失败时非零退出并保留失败清单。
-
-2026-09-11 预测路由第一阶段
-- 训练不再传入 `confusion_anchor=label`；训练、验证、测试的语义 pair 均为 base logits 的 top-1/top-2，训练检查改为 `pair_first == argmax(base_logits)`，允许 `pair_second == label`。
-- margin competitor 不再取 `details["pair_second"]`，改为在 detach 的 base logits 中屏蔽 GT 后 argmax，并保留 `competitor != label` 的显式检查；CE 和 confusion loss 权重未改。
-- confusion details/逐样本评估增加 competitor、base_prediction、final_prediction，以及 base top@2/top@5 命中记录；训练 epoch、验证与测试结果增加 base_top2_accuracy/base_top5_accuracy。
-- checkpoint protocol 更新为 `online_confusion_predicted_pair_hard_negative_margin_v3`，避免恢复旧 GT 路由 checkpoint；模型结构、ConfusionAwareAdapter、Prompt、TCP、optimizer、LR、epoch、batch size、augmentation、GAMMA、LAMBDA_CONF、数据集和 YAML 均未修改。
-- 新增回归测试覆盖 GT=A 且 base ranking=B>A>C，以及 GT 不在 top2；目标单测结果 22 passed、1 skipped，完整测试结果 38 passed、1 skipped。
-- 第一阶段实验沿用当前 no-bank 对照的 TCP-off，计划 DermaMNIST/Kvasir/CHMNIST × shots 4/8/16/32 × seeds 1/2/3，共 36 次；固定 GPU 1–6，每张卡同一时刻只运行一个完整实验。输出根目录为 `output/predicted_routing_stage1_3datasets_4_32shot`。
-- 2026-09-11 02:38:44 已在 tmux 会话 `predicted-routing-s1` 启动队列；首批 6 个任务占用 GPU 1–6。DermaMNIST 4-shot seed2 已通过参数/梯度审计并完成 epoch 1 训练与验证，训练日志和验证结果均出现 base top@2/top@5，证明端到端链路正常；队列状态见 `_manager/status.json`。
+2026-09-11 预测路由第一阶段，不再使用gt进行训练
 
 2026-09-13 原始联合重跑
-- 用户已撤销safe correction全部代码；明确授权删除output/safe_correction_v1、v2_aux、v3_rng、v4_residual四目录，确认无旧进程后执行删除。
-- 不改模型/trainer/任务YAML/损失，仅在output/original_tcp_confusion_joint_3datasets_4_32shot/_manager增加独立调度与汇总；原始TCP+Confusion同时开启，三数据集×shots8/4/16/32×seeds1/2/3共36次，无性能扩展门槛。
-- 指定biocoop环境，空闲GPU单任务单卡；tmux会话original-joint-36，任务退出事件立即接续，900秒发现空闲卡；worker失败保留日志并停止新任务。保存两种验证指标checkpoint测试及耗时，历史TCP按用户两位小数表明确标记来源。
-- 2026-09-13 19:32 已在tmux original-joint-36启动GPU4/7，DermaMNIST 8-shot seed2已完成真实batch并通过原有梯度审计：TCP和Confusion均有非零梯度，可训练参数3,731,591，无新增safe gate。四个旧结果目录删除完成。按用户要求启动确认后结束对话，由tmux继续完成36次。
-
-2026-09-13 冻结双专家 Linear MoE 最小实现
-- 新增 models/expert_moe.py、trainers/CoOp/expert_moe_biomedclip.py；train.py 增加配置与入口。原 CoOpVPT builder 仅增加 expert_checkpoint 加载出口，复用完整 Prompt bundle 严格恢复与原 bank/protocol 校验，提前退出不建立专家 optimizer 或写初始化 manifest。
-- TCP-only 与 Confusion-only 使用独立模型，完全冻结并始终 eval；Confusion 保持自身 pre-confusion prediction routing，TCP residual 关闭。单专家原内部结构、loss、checkpoint、bank、文本聚合不变。
-- Router 零初始化 Linear(3C,2)，6C+2 参数，输入两专家概率和绝对分歧，概率空间加权，clamp_min(1e-8) 后 NLL；只优化、保存 Router。支持 linear_moe/tcp_only/conf_only。
-- 原 few-shot dataset/sampling/seed/augmentation/训练超参数保持；MoE 保留尾部 batch 使用全部样本；自动按 validation accuracy 保存 best Router，不以 test 选模。
-- 新增最小回归测试与 README_CN.md 公式、输入输出、加载方式、运行命令。GPU 驱动当前不可用，性能实验未启动。
-- 验证结果：biocoop 环境新增 MoE 测试 6 passed；完整 tests 回归 44 passed、1 skipped（原真实 backbone 集成测试按环境开关跳过）。完成一次整体只读审查，无阻塞问题；历史 checkpoint 真实加载与性能对照未实测。
-- 用户授权 GPU 4 实验；提升执行权限后 GPU 驱动可访问（此前为沙箱不可见），GPU 4 现有进程约占 4GiB，不终止其他任务。新增 output/linear_moe/_manager/run.py，先用 DermaMNIST 4-shot seed1、原 100 epoch 运行完整 Router 训练，再对 val-accuracy 最佳 Router 与两单专家统一 test 评估；历史专家分别来自 paper_3datasets_4methods 与 predicted_routing_stage1_3datasets_4_32shot。
-2026-09-14 MoE 历史 bank 加载修复
-- 首次实际构建在 TCP prior_fingerprint 校验处失败。定位到历史 selective_confusion_v1 缓存的 projected bank 经原有两次 prior normalization 后与历史 TCP checkpoint 精确一致。
-- train.py 和 MoE load_expert 新增 TCP/CONF 独立 DESCRIPTION_CACHE、LAYER_DESCRIPTION_CACHE 配置，原严格 bank/权重校验不放宽，原模块与聚合不改；运行脚本对 TCP 指向已验证历史缓存，Confusion 使用独立重建缓存，避免两个历史专家被迫共用一组 bank 配置。
-- 用户确认没有额外历史 bank，要求从 checkpoint 重建。新增显式 EXPERT_MOE.REBUILD_BANKS（默认 False）；此次运行设为 True，从原权重与原描述恢复 bank。仅将 prior/pair 浮点字节指纹差异改为提示；保留 checkpoint strict=True、类别顺序/描述/模型/聚合/结构/protocol 校验，并用历史 initialization_manifest 的 pair_description_fingerprint 验证 Confusion 原描述来源。原单分支默认仍执行全部原校验。
-- 本次重启前用既有 validation（不使用 test）核对两单专家历史 best-accuracy 指标，恢复一致后再进入 Router 训练。不继续做数值哈希搜索。
-- 真实恢复核对通过：TCP val accuracy 63.31006979062811%，Confusion 65.10468594217348%，均与历史一致；Confusion 1003个val样本的final_prediction/pair_first/pair_second全部一致。重建bank仅保证原构建定义及已验证行为一致，不宣称数值逐bit相同。
-- 全量回归47 passed、1 skipped；GPU4已进入Router训练。运行中发现NFS multiprocessing临时文件清理报错（训练仍继续），后续runner将TMPDIR/tempfile目录固定为/tmp，避免此实际环境问题，不改变训练超参数。
-
-- 2026-09-14 首组GPU4实验完整完成：DermaMNIST 4-shot seed1，100 epoch，耗时707.70秒，validation accuracy选择epoch1 Router。Test accuracy：TCP 62.0449%，Confusion 63.3416%，Linear MoE 63.7905%；balanced accuracy分别43.9439%、34.8241%、42.7131%。MoE accuracy比最佳单专家高0.4489个百分点，但balanced accuracy仍低于TCP，不能据单组认定全面改进。完整结果见output/linear_moe/dermamnist/shots_4/seed1/completed.json；专家恢复一致性见expert_restoration.json。全量回归47 passed、1 skipped。
-2026-09-14 Linear MoE 全部36组实验
-- 用户要求只关注accuracy，完成三个数据集全部实验，确认正常后用tmux后台运行并汇报预计完成时间。
-- 新增 output/linear_moe/_manager/run_all.py：DermaMNIST/Kvasir/CHMNIST × shots4/8/16/32 × seeds1/2/3，固定GPU4串行；已完成DermaMNIST 4-shot seed1保留，剩余35组。预检全部checkpoint、manifest、历史val记录和bank文件齐全。
-- run.py增加独立smoke-only模式；正式批量队列前对Kvasir和CHMNIST 32-shot seed1检查完整历史专家恢复、val行为一致、真实Router一步优化与冻结状态；结果写独立smoke目录，不改变正式实验。
-- 队列每个任务退出后立即接续，运行中900秒更新心跳；失败保留日志并重试一次，仍失败记录后继续其余任务；每次完成更新accuracy_summary.csv/md与status.json。模型、loss、seed、采样、augmentation及100epoch超参数不变。
-- 2026-09-14 00:52 已确认72个历史checkpoint可读取且结构、protocol、seed/shots匹配；Kvasir与CHMNIST 32-shot seed1均通过历史val行为比对、真实Router一步优化、专家无梯度且eval检查（50个可训练参数）。正式Kvasir 4-shot seed1已完成epoch3，队列phase=training、completed=1/36、failed=[]。tmux会话linear-moe-36-gpu4继续GPU4串行35组；只汇总accuracy。预计剩余7–9小时，约09-14 07:52至09-14 09:52北京时间完成，见_manager/estimated_completion.json。
-2026-09-14 Linear MoE 全36组结果汇报
-- GPU4批量队列于07:54:14完成，36/36结果齐全，无失败、无重试；本轮队列从00:40:43开始，耗时7小时13分31秒（含35组新任务与两组预运行，首组结果复用）。
-- 仅统计test accuracy：TCP/Confusion/MoE的36组等权平均分别74.5252%、75.6636%、76.8846%。按同seed最佳单专家比较，MoE为26胜、5平、5负，平均+0.6532个百分点；12个dataset×shot设置中11个的MoE均值提升，DermaMNIST32-shot均值下降0.0665个百分点。
-- 36组历史专家val accuracy均一致，Confusion逐样本预测/选pair比对全部通过；19/36组最佳Router为epoch1，中位数epoch1。未评估固定50/50融合，不将全部收益归因于学习到的动态路由。
-- 完整结果（含三seed均值±样本标准差、36组明细、最佳epoch和耗时）见output/linear_moe/full_experiment_report.md；原始汇总accuracy_summary.csv，补充明细accuracy_detailed.csv。本次只读取/汇总既有实验，未重训或修改模型参数。
-
-2026-09-14 TCP基线来源核对
-- 用户指出CHMNIST旧TCP表73.70/82.63/86.20/90.57与MoE报告不同。核实MoE实际使用paper_3datasets_4methods/coop_deep_prompt_mttcp历史checkpoint；全36组TCP test accuracy与该批原始results_detailed.csv逐seed差值均为0。CHMNIST两种选模指标的原测试结果也一致，不能将差异归因于MoE加载、bank重建或这批checkpoint的accuracy/bacc选模。
-- 旧表数值在original_tcp_confusion_joint汇总脚本中作为用户历史表常量引用，没有关联原始checkpoint；具体旧实验版本/配置来源待定位。完整MoE报告已增加基线来源声明；提升仅对本次加载专家成立，不等同于超过用户旧表。
-2026-09-14 六方法全部结果统一核对
-- 用户要求确认CoOp、CoOp+Deep Prompt、+TCP、+Confusion、+TCP+Confusion、+TCP+Confusion(MoE)。逐一读取216条test_metrics.json及validation-accuracy选模记录，统一按seeds1/2/3均值±样本标准差(ddof=1)统计，无重训。
-- 前三行来源paper_3datasets_4methods；TCP为grouped10_layer_residual/LayerBasis+XProto，不是mean50。Confusion为predicted_routing_stage1（TCP off）；联合为original_tcp_confusion_joint（两分支联合训练）；MoE为linear_moe（冻结独立专家，仅Router训练）。单专家在MoE内的重评accuracy与原始记录逐seed一致。
-- 六方法中MoE在12个dataset×shot设置里10个均值最高；例外DermaMNIST4-shot联合62.53%，DermaMNIST32-shot Confusion69.54%。用户旧TCP表仍未定位checkpoint，不混入已核对表。
-- 核对表output/linear_moe/six_method_accuracy_verified.md，72个均值单元格six_method_accuracy_summary.csv，216条带原始文件路径明细six_method_accuracy_detailed.csv。
-
-2026-09-14 旧TCP表来源定位与测试补评
-- 三数据集12个旧表均值/样本标准差全部精确对应coop_deep_prompt_mttcp_gpu2_4_32shot的best_validation_accuracy.json，36个checkpoint存在；旧表是validation而非test。撤回此前无法定位的结论及旧表与MoE test直接比较。
-- 新增output/historical_tcp_test_comparison/evaluate.py：GPU4加载旧批validation accuracy最佳checkpoint，保留严格bank/方法元数据检查，逐组复现历史val accuracy后计算test accuracy，对比paper批原始test记录。无训练或模型参数更新；按数据集复用冻结backbone，逐组完整加载prompt bundle。
-- 旧批首组严格加载暴露prior数值指纹差异；补评改用既有显式恢复开关，仅允许bank数值指纹差异，语义/结构验证保持，全部val accuracy必须复现才能测试。没有修改模型实现或历史checkpoint。
-- 补评36/36完成，全部旧val accuracy复现；两批均为grouped10_layer_residual（当前模型元数据逐checkpoint验证通过），不是mean50。36组等权test均值旧批74.5168%，paper批74.5252%，差-0.0084个百分点。旧批在12个设置中5高7低；CHMNIST32-shot旧val90.57±1.38对应test88.65±0.78，当前paper test89.16±0.63。完整结果output/historical_tcp_test_comparison/comparison.md及detailed.csv；评估脚本独立只读审查无实质问题，无训练。
-
-2026-09-14：新增独立 Original-style Biomedical TCP 结构消融：TCP.MODE 默认 multitext，original_style 使用冻结 projected Mean-50 类 prototype、共享 512→128→3072 QuickGELU TKE、block 8 单次替换及后续自然传播；只保留注入前 Text Deep Prompt。新增 ORIGINAL_KG_WEIGHT=0.0，可选同次 forward 投影空间 cosine consistency。保留 MultiText 实现/checkpoint 和原 Confusion/MoE 路径，新增定向与回归测试及 README_CN 说明。TKE 461952 参数，新 TCP 包 486528 参数。
-验证结果：Original-style 定向测试 7 passed；现有 MultiText/CoOpVPT/Confusion/MoE/TextVPT/checkpoint 回归 47 passed、1 skipped（未开启真实 BiomedCLIP 权重集成测试）。覆盖 KG 权重 0/8、Confusion 开关、单次 forward、梯度和 checkpoint 隔离；未运行数据集训练。
-2026-09-14：按用户后续要求删除本次 Original-style TCP 的可选 KG：移除 ORIGINAL_KG_WEIGHT 配置、知识一致性损失、训练接线及专用联合返回接口；清理对应测试并更新 README_CN。保留 Mean-50 prototype、共享 TKE、block 8 单次注入，恢复原分类/Confusion loss；此前 KG 记录仅为历史。
-删除 KG 后验证：27 passed, 1 skipped, 2 warnings in 14.98s；覆盖 Original-style 结构与梯度、分类/Confusion loss、MoE 原接口。真实 BiomedCLIP 权重集成测试未启用。
 
 2026-09-14：按用户要求启动当前 Original-style TCP 三数据集完整实验（DermaMNIST/Kvasir/CHMNIST × 4/8/16/32-shot × seed 1/2/3，共36组），固定物理 GPU4，Confusion 关闭，输出 output/original_style_tcp_no_confusion_3datasets_4_32shot。先完成 DermaMNIST 4-shot seed1 smoke（100 epoch，6分58秒，峰值显存3.7GB）确认代码和数据无误，再由 tmux 会话 original-style-tcp-gpu4 串行执行剩余任务；队列脚本为 _manager/run_gpu4.sh。
 
 2026-09-14：按用户要求补充 DermaMNIST seed4（4/8/16/32-shot），训练入口 EXPERIMENT_SEEDS 扩展为 1/2/3/4。主 GPU4 队列 original-style-tcp-gpu4 完成后由 tmux 会话 original-style-tcp-gpu4-seed4 自动接续；seed4 输出仍在 output/original_style_tcp_no_confusion_3datasets_4_32shot/<dataset>/shots_<K>/seed4。汇总时不纳入 seed2，DermaMNIST 各 shot 仅使用 seed1、seed3、seed4。
 
-[2026-09-14] 修正补充实验范围：用户明确仅补跑 DermaMNIST 4-shot seed4；取消原先等待中的 DermaMNIST 8/16/32-shot seed4 计划，seed4 runner 已改为仅执行 shots=4。其他数据集和 shot/seed 组合保持不变；DermaMNIST 均值按 seed1、3、4 统计并排除 seed2。
-[2026-09-14] 修正 seed4 等待脚本的主队列 session 判断：改为精确匹配 `original-style-tcp-gpu4`，避免把自身 `original-style-tcp-gpu4-seed4` 作为前缀误判为主队列仍在运行。主队列已完成后，补充任务可正常启动。
-[2026-09-14] 修正 DermaMNIST 4-shot seed4 runner 的 Python 环境路径；实际环境为 `/mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop`。此前因路径不存在而立即退出，未启动训练；修正后重新执行。
-
 2026-09-14：按用户要求将代码收敛为当前共享 TKE TCP 单一路径。
-- 删除 models/confusion_aware.py、models/expert_moe.py、trainers/CoOp/expert_moe_biomedclip.py 及对应 Confusion/MoE 测试和 confuse_pair 描述文件。
-- 从 train.py、CoOpVPT_BiomedCLIP、CustomCLIP 和 TCP 配置移除 Confusion/MoE 开关、路由、辅助 loss、bank 构建和 checkpoint 筛选逻辑；TCP 不再提供 MODE 选择项。
-- CoOpVPT_BiomedCLIP 仅执行 Mean-50 class prototype、共享 TKE、block 8 单次 replacement 和普通分类 CE；README_CN.md 改为记录当前实现。旧 output 目录保留为历史实验文件，当前训练入口不再读取。
-- 清理 TKE checkpoint validator 的旧兼容参数，仅保留当前共享 TKE 的结构元数据校验。
-- 删除后通过 py_compile；删除后的完整 tests 回归结果为 18 passed、1 skipped、4 warnings。
+
+2026-09-15：在现有 CoOp + Visual/Text Deep Prompt + Original-style TCP 上新增 Competitive Visual Prompt。
+
+2026-09-15：按后续要求将视觉端改为与 TCP 文本端对称的 prototype-to-prompt 路径。
+
+2026-09-15：修正视觉注入层级，使其与 Original-style TCP 文本端严格一致。
+
+2026-09-15：补做此前已完成 v3 实验的 test accuracy。
+
+2026-09-16：补充当前 Original-style TKE TCP 的测试集评估。

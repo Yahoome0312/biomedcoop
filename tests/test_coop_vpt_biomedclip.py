@@ -108,12 +108,23 @@ def test_tcp_check_cfg_accepts_both_injection_settings(enabled):
     trainer.check_cfg(_tcp_cfg(enabled))
 
 
-def test_tcp_is_the_only_optional_prompt_component():
+def test_tcp_and_competitive_visual_prompt_configuration():
     cfg = _tcp_cfg()
     assert "MODE" not in cfg.TRAINER.TCP
     assert "CONFUSION_AWARE" not in cfg.TRAINER
     assert "EXPERT_MOE" not in cfg.TRAINER
     assert cfg.TRAINER.TCP.INSERT_LAYER == 8
+    assert cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT.ENABLED
+    assert cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT.INSERT_LAYER == 8
+    assert cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT.NUM_TOKENS == 4
+    assert cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT.BOTTLENECK_DIM == 128
+
+
+def test_check_cfg_accepts_disabled_competitive_visual_prompt():
+    cfg = _tcp_cfg()
+    cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT.ENABLED = False
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.check_cfg(cfg)
 
 
 def test_classification_loss_has_no_auxiliary_branch():

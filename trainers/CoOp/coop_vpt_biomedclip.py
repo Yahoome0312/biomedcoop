@@ -20,6 +20,7 @@ from dassl.utils import load_checkpoint
 from dassl.utils.torchtools import resume_from_checkpoint, save_checkpoint
 
 from models.biomedclip_loader import load_biomedclip
+from models.competitive_visual_prompt import VisualPrototypePrompt
 from models.original_style_tcp import (
     OriginalStyleTCPBertTextEncoder,
     build_frozen_description_bank,
@@ -30,7 +31,8 @@ from trainers.prompt_templates import BIOMEDCOOP_TEMPLATES
 
 
 DESCRIPTION_COUNT = 50
-PROTOCOL = "coop_vpt_tcp_tke_v1"
+BASE_PROTOCOL = "coop_vpt_no_confusion_v1"
+CVP_PROTOCOL = "coop_vpt_tcp_tke_cvp_v3"
 
 
 def _json_write(path, value):
@@ -55,11 +57,72 @@ def _parameter_fingerprint(named_parameters):
 class PromptParameterBundle(nn.Module):
     """Checkpoint the prompt adapters enabled for the current TCP run."""
 
-    def __init__(self, prompt_learner, visual_prompt, tcp):
+    def __init__(
+        self, prompt_learner, visual_prompt, tcp, competitive_visual_prompt=None
+    ):
         super().__init__()
         self.prompt_learner = prompt_learner
         self.visual_prompt = visual_prompt
         self.tcp = tcp
+        if competitive_visual_prompt is not None:
+            self.competitive_visual_prompt = competitive_visual_prompt
+
+
+class CVPCustomCLIP(CustomCLIP):
+    """Keep the Base forward untouched and add the optional CVP path."""
+
+    def __init__(self, cfg, classnames, biomedclip_model):
+        super().__init__(cfg, classnames, biomedclip_model)
+        self.competitive_visual_prompt = None
+        self.competitive_visual_insert_layer = None
+
+    def enable_competitive_visual_prompt(self, visual_tke, insert_layer):
+        self.competitive_visual_prompt = visual_tke
+        self.competitive_visual_insert_layer = int(insert_layer)
+
+    def forward(
+        self,
+        image,
+        return_text_features=False,
+        return_features=False,
+    ):
+        if self.competitive_visual_prompt is None:
+            return super().forward(
+                image,
+                return_text_features=return_text_features,
+                return_features=return_features,
+            )
+
+        prompts = self.prompt_learner()
+        text_features = self.text_encoder(prompts, self.tokenized_prompts)
+        normalized_text = text_features / text_features.norm(dim=-1, keepdim=True)
+
+        shared_state = self.image_encoder.forward_before_layer(
+            image.type(self.dtype), self.competitive_visual_insert_layer
+        )
+        class_visual_prompts = self.competitive_visual_prompt(
+            self.text_encoder.class_prior
+        )
+        visual_prompts = class_visual_prompts.unsqueeze(0).expand(
+            shared_state.shape[0], -1, -1, -1
+        )
+        image_features = self.image_encoder.forward_from_layer(
+            shared_state,
+            self.competitive_visual_insert_layer,
+            prototype_prompts=visual_prompts,
+        )
+        normalized_images = image_features / image_features.norm(
+            dim=-1, keepdim=True
+        )
+        logits = self.logit_scale.exp() * torch.einsum(
+            "bcd,cd->bc", normalized_images, normalized_text
+        )
+
+        if return_features:
+            return logits, normalized_text, normalized_images
+        if return_text_features:
+            return logits, normalized_text
+        return logits
 
 
 @TRAINER_REGISTRY.register()
@@ -76,10 +139,19 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             raise ValueError("The retained CoOp setup requires four tokens")
         if int(cfg.TRAINER.TCP.INSERT_LAYER) < 1:
             raise ValueError("TCP INSERT_LAYER must be at least one")
+        cvp = cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT
+        if bool(cvp.ENABLED):
+            if int(cvp.INSERT_LAYER) != 8:
+                raise ValueError("Competitive Visual Prompt must be inserted at block 8")
+            if int(cvp.NUM_TOKENS) != 4:
+                raise ValueError("Competitive Visual Prompt requires four tokens")
+            if int(cvp.BOTTLENECK_DIM) != 128:
+                raise ValueError("Competitive Visual TKE bottleneck must be 128")
 
     def build_model(self):
         cfg = self.cfg
         trainer_cfg = cfg.TRAINER.COOPVPT
+        cvp = cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT
         classnames = self.dm.dataset.classnames
 
         print("Loading frozen BiomedCLIP and building from-scratch prompt adapters")
@@ -88,13 +160,13 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             vpt_mode="deep",
             vpt_num_tokens=trainer_cfg.VPT_N_CTX,
             vpt_dropout=trainer_cfg.VPT_DROPOUT,
+            vpt_prompt_depth=int(cvp.INSERT_LAYER) if bool(cvp.ENABLED) else None,
         )
         if trainer_cfg.PREC in {"fp32", "amp"}:
             biomedclip_model.float()
 
-        self.model = CustomCLIP(cfg, classnames, biomedclip_model.eval())
+        self.model = CVPCustomCLIP(cfg, classnames, biomedclip_model.eval())
         self._gradient_audit_complete = False
-        self.protocol = PROTOCOL
 
         tcp = cfg.TRAINER.TCP
         self.tcp_enabled = bool(tcp.ENABLED)
@@ -116,6 +188,20 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         )
         tcp_prompt = self.model.text_encoder.tcp_prompt
 
+        self.cvp_enabled = bool(cvp.ENABLED)
+        visual_tke = None
+        if self.cvp_enabled:
+            visual_tke = VisualPrototypePrompt(
+                prior_dim=self.model.text_encoder.prior_dim,
+                bottleneck_dim=cvp.BOTTLENECK_DIM,
+                num_tokens=cvp.NUM_TOKENS,
+                hidden_dim=self.model.image_encoder.visual_prompt.embed_dim,
+            )
+            self.model.enable_competitive_visual_prompt(
+                visual_tke, insert_layer=cvp.INSERT_LAYER
+            )
+        self.protocol = CVP_PROTOCOL if self.cvp_enabled else BASE_PROTOCOL
+
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)
         self.model.prompt_learner.ctx.requires_grad_(True)
@@ -127,6 +213,9 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             for name, parameter in tcp_prompt.named_parameters():
                 if not name.startswith("text_prompt."):
                     parameter.requires_grad_(True)
+        if self.cvp_enabled:
+            for parameter in visual_tke.parameters():
+                parameter.requires_grad_(True)
         if cfg.MODEL.INIT_WEIGHTS:
             raise ValueError("MODEL.INIT_WEIGHTS is forbidden in from-scratch runs")
 
@@ -139,17 +228,21 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
         self.model.to(self.device)
         self.model.eval()
-        for module in (
+        trainable_modules = [
             self.model.prompt_learner,
             self.model.image_encoder.visual_prompt,
             tcp_prompt,
-        ):
+        ]
+        if self.cvp_enabled:
+            trainable_modules.append(visual_tke)
+        for module in trainable_modules:
             module.train()
 
         self.prompt_parameters = PromptParameterBundle(
             self.model.prompt_learner,
             visual_prompt=self.model.image_encoder.visual_prompt,
             tcp=tcp_prompt,
+            competitive_visual_prompt=visual_tke,
         )
 
         trainable_parameters = [
@@ -166,6 +259,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         manifest = {
             "protocol": self.protocol,
             "tcp_enabled": self.tcp_enabled,
+            "cvp_enabled": self.cvp_enabled,
+            "cvp_metadata": self._cvp_metadata(),
             "seed": int(cfg.SEED),
             "shots": int(cfg.DATASET.NUM_SHOTS),
             "core_initialization_fingerprint": base_fingerprint,
@@ -191,6 +286,11 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for name, parameter in model.text_encoder.tcp_prompt.named_parameters()
                 if not name.startswith("text_prompt.") and parameter.requires_grad
             ],
+            "competitive_visual_tke": (
+                list(model.competitive_visual_prompt.parameters())
+                if self.cvp_enabled
+                else []
+            ),
         }
         counts = {
             name: sum(parameter.numel() for parameter in parameters)
@@ -224,6 +324,11 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for name, _ in self.model.text_encoder.tcp_prompt.named_parameters()
                 if not name.startswith("text_prompt.")
             )
+        if self.cvp_enabled:
+            expected.update(
+                "competitive_visual_prompt.{}".format(name)
+                for name, _ in self.model.competitive_visual_prompt.named_parameters()
+            )
         if set(trainable) != expected:
             raise RuntimeError(
                 "Unexpected trainable parameters: expected {}, got {}".format(
@@ -247,6 +352,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             model.image_encoder.visual_prompt,
             model.text_encoder.tcp_prompt,
         ]
+        if self.cvp_enabled:
+            modules.append(model.competitive_visual_prompt)
         if mode == "train":
             for module in modules:
                 module.train()
@@ -313,6 +420,10 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for name, parameter in model.text_encoder.tcp_prompt.named_parameters()
                 if not name.startswith("text_prompt.")
             ]
+        if self.cvp_enabled:
+            branches["CompetitiveVisualTKE"] = list(
+                model.competitive_visual_prompt.parameters()
+            )
         norms = {}
         for name, parameters in branches.items():
             norm = sum(
@@ -371,6 +482,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "scheduler": self.sched.state_dict() if self.sched is not None else None,
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
             "tcp_enabled": self.tcp_enabled,
+            "cvp_enabled": self.cvp_enabled,
+            "cvp_metadata": self._cvp_metadata(),
             "protocol": self.protocol,
         }
         save_checkpoint(
@@ -402,11 +515,34 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             raise RuntimeError("Checkpoint training protocol does not match current run")
         if bool(checkpoint.get("tcp_enabled", True)) != self.tcp_enabled:
             raise RuntimeError("Checkpoint TCP setting does not match current run")
+        if bool(checkpoint.get("cvp_enabled", False)) != self.cvp_enabled:
+            raise RuntimeError("Checkpoint CVP setting does not match current run")
+        if checkpoint.get("cvp_metadata") != self._cvp_metadata():
+            raise RuntimeError("Checkpoint CVP architecture does not match current run")
         validate_tcp_checkpoint_state(
             checkpoint["state_dict"],
             self._unwrapped_model().text_encoder.tcp_prompt,
             prefix="tcp.",
         )
+
+    def _cvp_metadata(self):
+        if not self.cvp_enabled:
+            return None
+        module = self._unwrapped_model().competitive_visual_prompt
+        return {
+            "insert_layer": int(
+                self.cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT.INSERT_LAYER
+            ),
+            "prior_dim": module.prior_dim,
+            "bottleneck_dim": module.bottleneck_dim,
+            "num_tokens": module.num_tokens,
+            "hidden_dim": module.hidden_dim,
+            "visual_prompt_depth": (
+                self._unwrapped_model().image_encoder.visual_prompt.prompt_depth
+            ),
+            "input": "mean50_class_prototype",
+            "connection": "single_layer_replacement_and_natural_propagation",
+        }
 
     def load_prompt_checkpoint(self, path):
         checkpoint = load_checkpoint(str(path))

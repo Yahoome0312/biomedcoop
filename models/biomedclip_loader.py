@@ -44,7 +44,13 @@ def _validate_biomedclip(model):
         )
 
 
-def load_biomedclip(vpt_enabled=False, vpt_mode="shallow", vpt_num_tokens=5, vpt_dropout=0.0):
+def load_biomedclip(
+    vpt_enabled=False,
+    vpt_mode="shallow",
+    vpt_num_tokens=5,
+    vpt_dropout=0.0,
+    vpt_prompt_depth=None,
+):
     """Load the original weights and optionally wrap only the visual forward."""
     model, preprocess = create_model_from_pretrained(BIOMEDCLIP_MODEL_ID)
 
@@ -61,6 +67,7 @@ def load_biomedclip(vpt_enabled=False, vpt_mode="shallow", vpt_num_tokens=5, vpt
             num_tokens=vpt_num_tokens,
             mode=vpt_mode,
             dropout=vpt_dropout,
+            prompt_depth=vpt_prompt_depth,
         )
 
     return model, preprocess
