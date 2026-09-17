@@ -149,3 +149,21 @@ python -m pytest tests -q
 ```
 
 测试使用小型 BERT 和 ViT，不需要下载真实 BiomedCLIP 权重；真实权重集成测试需要显式设置 `RUN_BIOMEDCLIP_INTEGRATION=1`。
+
+## 测试集混淆计数矩阵
+
+`build_test_confusion_count_matrix.py` 仅遍历 dataset 的 `test` split，使用冻结的
+BiomedCLIP 与现有 Mean-50 biomedical description 类别原型，以 cosine logits 的
+`argmax` 作为预测类别，累计整数矩阵 `M[真实类别, 预测类别]`：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python build_test_confusion_count_matrix.py \
+  --root /mnt/nas1/disk09/yuejianwu/biomedcoop/data \
+  --dataset-config-file configs/datasets/dermamnist.yaml \
+  --output output/test_confusion_counts/DermaMNIST
+```
+
+输出为 `test_confusion_count_matrix.pt` 和
+`test_confusion_count_matrix.png`。矩阵是 CPU `torch.long` 计数张量；图片直接
+标注每个真实类别与预测类别组合的测试图片数量，不做归一化，也不使用
+train/validation 图片。
