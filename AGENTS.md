@@ -32,4 +32,3 @@
 ## 本项目相关
 - 方法和模块的详细信息，包括模块功能和方法、相关公式、输入输出等要动态维护在README_CN.md 中。
 - 虚拟环境固定为 conda activate /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop，gpu按每次任务一张卡进行分配。
-- 每次运行实验需要记录在note.txt，只需简单记录输出目录、对应命令行、当前使用的方法，其余信息不需要记录。

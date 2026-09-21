@@ -94,14 +94,19 @@ class CVPCustomCLIP(CustomCLIP):
             )
 
         prompts = self.prompt_learner()
-        text_features = self.text_encoder(prompts, self.tokenized_prompts)
+        class_tokens = None
+        if self.competitive_visual_prompt.serial:
+            class_tokens = self.text_encoder.aggregate_class_tokens()
+            text_features = self.text_encoder(prompts, self.tokenized_prompts, class_tokens)
+        else:
+            text_features = self.text_encoder(prompts, self.tokenized_prompts)
         normalized_text = text_features / text_features.norm(dim=-1, keepdim=True)
 
         shared_state = self.image_encoder.forward_before_layer(
             image.type(self.dtype), self.competitive_visual_insert_layer
         )
         class_visual_prompts = self.competitive_visual_prompt(
-            self.text_encoder.class_prior
+            class_tokens if self.competitive_visual_prompt.serial else self.text_encoder.class_prior
         )
         visual_prompts = class_visual_prompts.unsqueeze(0).expand(
             shared_state.shape[0], -1, -1, -1
@@ -161,6 +166,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             vpt_num_tokens=trainer_cfg.VPT_N_CTX,
             vpt_dropout=trainer_cfg.VPT_DROPOUT,
             vpt_prompt_depth=int(cvp.INSERT_LAYER) if bool(cvp.ENABLED) else None,
+            vpt_prototype_fusion=bool(cvp.ENABLED and cvp.FUSION),
+            vpt_fusion_alpha=cvp.FUSION_ALPHA,
         )
         if trainer_cfg.PREC in {"fp32", "amp"}:
             biomedclip_model.float()
@@ -185,6 +192,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             classnames,
             insert_layer=tcp.INSERT_LAYER,
             enabled=self.tcp_enabled,
+            fusion=tcp.FUSION,
+            fusion_alpha=tcp.FUSION_ALPHA,
         )
         tcp_prompt = self.model.text_encoder.tcp_prompt
 
@@ -192,10 +201,12 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         visual_tke = None
         if self.cvp_enabled:
             visual_tke = VisualPrototypePrompt(
-                prior_dim=self.model.text_encoder.prior_dim,
+                prior_dim=(self.model.text_encoder.hidden_dim if cvp.SERIAL
+                           else self.model.text_encoder.prior_dim),
                 bottleneck_dim=cvp.BOTTLENECK_DIM,
                 num_tokens=cvp.NUM_TOKENS,
                 hidden_dim=self.model.image_encoder.visual_prompt.embed_dim,
+                serial=cvp.SERIAL,
             )
             self.model.enable_competitive_visual_prompt(
                 visual_tke, insert_layer=cvp.INSERT_LAYER
@@ -259,6 +270,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         manifest = {
             "protocol": self.protocol,
             "tcp_enabled": self.tcp_enabled,
+            "tcp_fusion": self._tcp_fusion_metadata(),
             "cvp_enabled": self.cvp_enabled,
             "cvp_metadata": self._cvp_metadata(),
             "seed": int(cfg.SEED),
@@ -312,8 +324,11 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         }
         expected = {
             "prompt_learner.ctx",
-            "image_encoder.visual_prompt.prompt_embeddings",
         }
+        expected.update(
+            "image_encoder.visual_prompt.{}".format(name)
+            for name, _ in self.model.image_encoder.visual_prompt.named_parameters()
+        )
         expected.update(
             "text_encoder.tcp_prompt.text_prompt.{}".format(name)
             for name, _ in self.model.text_encoder.tcp_prompt.text_prompt.named_parameters()
@@ -482,6 +497,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "scheduler": self.sched.state_dict() if self.sched is not None else None,
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
             "tcp_enabled": self.tcp_enabled,
+            "tcp_fusion": self._tcp_fusion_metadata(),
             "cvp_enabled": self.cvp_enabled,
             "cvp_metadata": self._cvp_metadata(),
             "protocol": self.protocol,
@@ -511,6 +527,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         return start_epoch
 
     def _validate_checkpoint_metadata(self, checkpoint):
+        if checkpoint.get("tcp_fusion") != self._tcp_fusion_metadata():
+            raise RuntimeError("Checkpoint TCP fusion does not match current run")
         if checkpoint.get("protocol") != self.protocol:
             raise RuntimeError("Checkpoint training protocol does not match current run")
         if bool(checkpoint.get("tcp_enabled", True)) != self.tcp_enabled:
@@ -525,11 +543,15 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             prefix="tcp.",
         )
 
+    def _tcp_fusion_metadata(self):
+        prompt = self._unwrapped_model().text_encoder.tcp_prompt
+        return {"alpha": prompt.fusion_alpha} if prompt.fusion else None
+
     def _cvp_metadata(self):
         if not self.cvp_enabled:
             return None
         module = self._unwrapped_model().competitive_visual_prompt
-        return {
+        metadata = {
             "insert_layer": int(
                 self.cfg.TRAINER.COMPETITIVE_VISUAL_PROMPT.INSERT_LAYER
             ),
@@ -540,9 +562,13 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "visual_prompt_depth": (
                 self._unwrapped_model().image_encoder.visual_prompt.prompt_depth
             ),
-            "input": "mean50_class_prototype",
+            "input": "text_mlp_tokens" if module.serial else "mean50_class_prototype",
             "connection": "single_layer_replacement_and_natural_propagation",
         }
+        alpha = self._unwrapped_model().image_encoder.visual_prompt.fusion_alpha
+        if alpha is not None:
+            metadata.update(connection="weighted_deep_prompt_fusion", fusion_alpha=alpha)
+        return metadata
 
     def load_prompt_checkpoint(self, path):
         checkpoint = load_checkpoint(str(path))

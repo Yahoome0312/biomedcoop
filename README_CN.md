@@ -4,7 +4,7 @@
 
 本仓库使用冻结的 BiomedCLIP 进行医学图像少样本提示学习。当前主线为 CoOp + Visual Deep Prompt + Text Deep Prompt + Original-style TCP，并可启用 Competitive Visual Prompt（CVP）；Confusion 和 Expert MoE 代码、配置与测试已移除。数据集、few-shot sampling、augmentation、优化器、scheduler、learning rate、epoch、batch size 和 seed 约束沿用原设置。
 
-训练集使用 K-shot 采样，验证集和测试集保持官方划分。训练、验证和测试的 batch size 固定为 32，num_workers 固定为 8。主实验 seed 为 1、2、3，补充实验可使用 4。
+训练集使用 K-shot 采样，验证集使用原有完整划分；统一训练 100 轮，按完整验证集 accuracy 最优选择模型，在完整测试集上评估。训练、验证和测试的 batch size 固定为 32，num_workers 固定为 8。主实验 seed 为 1、2、3，补充实验使用 seed 4、5。
 
 ## 安装
 
@@ -56,11 +56,21 @@ D_proj → D_proj / 4 → QuickGELU → 4 × hidden_dim
 
 TKE 输出 reshape 为 `[C, 4, hidden_dim]`，默认 hidden size 为 768，因此每个类别得到 4 个 class-aware prompt tokens。TKE 参数量为 461,952。
 
-Text Encoder 的 block 0–7 使用正常 CoOp/Text Deep Prompt。进入 block 8 前，CLS 后的 4 个 prompt slots 一次性替换为对应类别的 TKE tokens；block 9–11 直接使用上一层 hidden states，不再重新生成或覆盖 TCP tokens。
+Text Encoder 的 block 0–7 使用正常 CoOp/Text Deep Prompt。历史直接替换模式（`FUSION=False`）在进入 block 8 前，将 CLS 后的 4 个 prompt slots 一次性替换为对应类别的 TKE tokens；block 9–11 直接使用上一层 hidden states，不再重新生成或覆盖 TCP tokens。
+
+当前默认 `TRAINER.TCP.FUSION=True`，block 8 使用加权融合：
+
+```text
+T = TextMLP(prototype)                         # [C,4,768]
+P8 = 独立可学习 Deep Prompt                     # [4,768]，类别间共享
+tokens = alpha * T + (1 - alpha) * P8          # [C,4,768]
+```
+
+`FUSION_ALPHA=0.5` 为固定系数，不参与训练。P8 使用标准差 0.02 的正态初始化，增加 3,072 个训练参数；初始化时保留原随机数状态，不改变其他参数和训练采样。融合不涉及上一层 prompt hidden states，后续层也不重复注入。
 
 当前实现不包含 5×10 grouping、LayerBasis、XProto/B+Delta、跨类别 centering、norm matching、layer gate 或多层 TCP 重注入。description bank 和 class prototype 均为 frozen buffer；BiomedCLIP backbone 也保持冻结。训练参数只有 CoOp context、Visual Deep Prompt、注入前 Text Deep Prompt 和共享 TKE。TCP prompt bundle 共 486,528 个可训练参数（TCP 开启时）。
 
-`TRAINER.TCP.ENABLED=False` 时保留普通 Text Deep Prompt，冻结 TKE 参数并跳过 TCP replacement。TCP 没有实现模式选择项，配置只包含：
+`TRAINER.TCP.ENABLED=False` 时保留普通 Text Deep Prompt，冻结 TKE 参数并跳过 TCP 注入及融合。主要配置为：
 
 ```yaml
 TRAINER:
@@ -68,6 +78,8 @@ TRAINER:
     ENABLED: True
     DESCRIPTION_CACHE: ""
     INSERT_LAYER: 8
+    FUSION: True
+    FUSION_ALPHA: 0.5
 ```
 
 ## Competitive Visual Prompt
@@ -94,7 +106,18 @@ image [B,3,H,W]
   → logits [B,C] → CE
 ```
 
-视觉端现在与 TCP 文本端保持同样的单次 replacement 语义：启用时只创建 block 0–7 的 Visual Deep Prompt 参数；进入 block 8 前，Visual TKE 生成的 4 个 token 替换原视觉 prompt slots，但不替换 CLS 或任何 patch token；block 9–11 不再注入或替换 VPT，直接传播 block 8 更新后的视觉原型 prompt 和 patches。最后删除 prompt slots 后仍由原 CLS/global pooling 产生分类特征，不对视觉原型 prompt 做 pooling。Visual TKE 与 CoOp、block 0–7 Visual/Text Deep Prompt、TCP Text TKE 联合训练；ViT/BERT backbone、visual projection、Mean-50 prototype 和 logit scale 均冻结，loss 只有 CE。关闭视觉原型 prompt 时仍创建并使用完整 12 层 Visual Deep Prompt Base。
+以上为保留的并行路径。当前默认采用串行；`TRAINER.COMPETITIVE_VISUAL_PROMPT.SERIAL=True` 改为：
+
+```text
+prototype [C,512] → TextMLP → T [C,4,768]
+T → 逐 token 共享 VisualMLP (768 → 128 → QuickGELU → 768) → [C,4,768]
+```
+
+串行 VisualMLP 共 197,504 个参数；输入使用融合前的 T，不经过池化或 detach。每次 forward 只计算一次 TextMLP，文本注入与视觉映射共享输出，因此视觉 loss 可以反向更新 TextMLP。视觉端在 block 8 使用下述加权融合。
+
+当前视觉融合：`TRAINER.COMPETITIVE_VISUAL_PROMPT.FUSION=True` 时，在视觉 block 8 使用 `alpha * VisualMLP(T) + (1 - alpha) * VisualDeepPrompt_8`，`FUSION_ALPHA=0.5` 固定不训练。独立的 `VisualDeepPrompt_8: [4,768]` 在类别和样本间共享，按原 VPT 的均匀分布初始化，增加 3,072 个参数；初始化保留随机数状态，不改变公共参数。只融合一次，CLS、patch tokens 和 block 9–11 的传播方式不变。当前默认开启；加载历史直接替换 checkpoint 时需显式关闭融合。
+
+关闭视觉融合时，视觉端使用单次 replacement 语义：启用时只创建 block 0–7 的 Visual Deep Prompt 参数；进入 block 8 前，Visual TKE 生成的 4 个 token 替换原视觉 prompt slots，但不替换 CLS 或任何 patch token；block 9–11 不再注入或替换 VPT，直接传播 block 8 更新后的视觉原型 prompt 和 patches。最后删除 prompt slots 后仍由原 CLS/global pooling 产生分类特征，不对视觉原型 prompt 做 pooling。Visual TKE 与 CoOp、block 0–7 Visual/Text Deep Prompt、TCP Text TKE 联合训练；ViT/BERT backbone、visual projection、Mean-50 prototype 和 logit scale 均冻结，loss 只有 CE。关闭视觉原型 prompt 时仍创建并使用完整 12 层 Visual Deep Prompt Base。
 
 ```yaml
 TRAINER:
@@ -103,6 +126,9 @@ TRAINER:
     INSERT_LAYER: 8
     NUM_TOKENS: 4
     BOTTLENECK_DIM: 128
+    SERIAL: True
+    FUSION: True
+    FUSION_ALPHA: 0.5
 ```
 
 `TRAINER.COMPETITIVE_VISUAL_PROMPT.ENABLED=False` 时不构建 Visual TKE，并直接走修改前的 Original-style TCP Base forward、checkpoint protocol 和 prompt bundle。
@@ -141,6 +167,35 @@ done
 ## Checkpoint 与验证
 
 训练 checkpoint 保存 `prompt_parameters` bundle、optimizer、scheduler、AMP scaler 及 TCP 结构元数据。恢复时严格校验 TKE 维度、层数、插入层、token 数和 description bank 元数据；当前代码不提供已删除 MultiText TCP、Confusion 或 MoE 实现的加载入口，并保留当前 TKE checkpoint 的固定 protocol 标识。
+
+融合 checkpoint 额外记录固定 alpha，串行 checkpoint 记录文本 token 输入及映射维度；显式关闭相应融合及串行配置时仍可加载原替换／并行 checkpoint。
+
+当前使用 `TEST.FINAL_MODEL="best_val"`、`TEST.BEST_METRIC="accuracy"`、`TEST.SAVE_BEST_METRICS=["accuracy"]`。每次训练 100 轮，每轮在原有完整验证集评估，accuracy 严格提高时保存最优模型，同分保留较早轮次。最终加载该模型评估完整测试集。
+
+### 当前两种融合方法全量实验
+
+```bash
+conda activate /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop
+python -u -m tools.experiments batch \
+  --output output/prompt_fusion_fullval_best --gpus 0 2
+```
+
+脚本运行两种融合方法，训练及选模配置统一使用 `configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml`。运行主机为 `10.154.63.11`，GPU 0、2 各运行一个任务；每 15 分钟记录一次进度摘要，任务完成即接续下一组。
+
+| 方法 | 当前结构 |
+|---|---|
+| CoOp + 双端 Deep Prompt + Class Text Token | 文本 block 8 固定 0.5 类别 token／独立 Deep Prompt 融合，关闭 Class Visual Token |
+| 再加 Class Visual Token | 串行 TextMLP→VisualMLP，文本和视觉 block 8 均固定 0.5 融合 |
+
+DermaMNIST、Kvasir、CHMNIST × 4/8/16/32-shot × seed 1/2/3 × 两方法，共 72 组。普通 Deep Prompt 的逐层替换机制保持原实现；融合针对类别 token 在 block 8 的注入。串行输入为融合前的 TextMLP 输出，梯度不断开。
+
+全部从头训练，不复用旧选模结果。模型构建后统一重设训练 seed；固定 description bank 沿用 `caches/three_stage_banks/`。未完成任务重新执行时归档后从头训练，已完成任务跳过。
+
+输出包括 `protocol.json`、每组的 `results.json`（`best_val`，含所选轮次和验证 accuracy）、`per_seed.csv`、`summary.csv`、`overall.csv` 和 `summary.md`。汇总报告逐 seed 测试 accuracy、均值和标准差；整体 accuracy 先对 seed 求均值，再对数据集和 shot 等权平均。
+
+单组训练使用 `python -m tools.experiments single --output <目录> --dataset dermamnist --method visual --shots 4 --seed 4`。批量模式可用 `--tasks <tasks.json>` 接续已有实验清单及其输出目录中的 `protocol.json`。调度、训练和汇总统一放在 `tools/experiments.py`。
+
+补充实验：DermaMNIST、4-shot、串行＋双端 0.5 融合另跑 seed 4、5，沿用 100 轮训练和完整验证集 accuracy 最优选模。当前 72 组队列完成后在 GPU 0、2 启动，独立保存至 `output/prompt_fusion_fullval_best_seed45/`，不混入原 seed 1/2/3 主表。
 
 运行测试：
 

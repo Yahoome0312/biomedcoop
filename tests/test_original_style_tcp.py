@@ -75,8 +75,31 @@ def test_mean50_order_independence_and_shared_tke():
     }
 
 
-def test_once_at_insert_layer_and_natural_propagation_with_gradients():
+def test_fusion_preserves_initialization_and_uses_fixed_half_weights():
+    torch.manual_seed(9)
+    original = OriginalStyleTCPPromptParameters(16, 32, 12)
+    original_rng = torch.random.get_rng_state()
+    torch.manual_seed(9)
+    fused = OriginalStyleTCPPromptParameters(16, 32, 12, fusion=True)
+    assert torch.equal(original_rng, torch.random.get_rng_state())
+    for name, value in original.state_dict().items():
+        torch.testing.assert_close(value, fused.state_dict()[name])
+    tokens = fused.class_tokens(torch.randn(3, 16))
+    result = fused.prompt_for_layer(8, tokens, torch.float32, "cpu")
+    torch.testing.assert_close(result, 0.5 * tokens + 0.5 * fused.fusion_prompt)
+    result.square().sum().backward()
+    assert fused.fusion_prompt.grad.norm() > 0
+    assert fused.up_projection.weight.grad.norm() > 0
+    restored = OriginalStyleTCPPromptParameters(16, 32, 12, fusion=True)
+    restored.load_state_dict(fused.state_dict(), strict=True)
+    torch.testing.assert_close(restored.fusion_prompt, fused.fusion_prompt)
+
+
+@pytest.mark.parametrize("fusion", [False, True])
+def test_once_at_insert_layer_and_natural_propagation_with_gradients(fusion):
     encoder, bank, prompts, ids = _original_encoder()
+    if fusion:
+        encoder.tcp_prompt = OriginalStyleTCPPromptParameters(16, 32, 12, fusion=True)
     inputs, outputs = {}, {}
     handles = []
     for i, layer in enumerate(encoder.transformer.encoder.layer):
@@ -97,9 +120,12 @@ def test_once_at_insert_layer_and_natural_propagation_with_gradients():
     try:
         result = encoder(prompts, ids)
         assert result.shape == (3, 16)
-        torch.testing.assert_close(
-            inputs[8][:, 1:5], encoder.aggregate_class_tokens()
-        )
+        expected = encoder.aggregate_class_tokens()
+        if fusion:
+            expected = 0.5 * expected + 0.5 * encoder.tcp_prompt.fusion_prompt
+        torch.testing.assert_close(inputs[8][:, 1:5], expected)
+        torch.testing.assert_close(inputs[8][:, :1], outputs[7][:, :1])
+        torch.testing.assert_close(inputs[8][:, 5:], outputs[7][:, 5:])
         for i in range(9, 12):
             assert torch.equal(inputs[i], outputs[i - 1])
         for i in range(1, 8):
@@ -112,6 +138,8 @@ def test_once_at_insert_layer_and_natural_propagation_with_gradients():
     finally:
         for handle in handles:
             handle.remove()
+    if fusion:
+        assert encoder.tcp_prompt.fusion_prompt.grad.norm() > 0
     assert encoder.tcp_prompt.down_projection.weight.grad.norm() > 0
     assert encoder.tcp_prompt.up_projection.weight.grad.norm() > 0
     assert encoder.tcp_prompt.text_prompt.prompt_embeddings.grad.norm() > 0

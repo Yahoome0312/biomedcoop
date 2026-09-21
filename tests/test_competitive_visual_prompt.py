@@ -1,8 +1,10 @@
+import pytest
 import torch
 from torch import nn
 from timm.models.vision_transformer import VisionTransformer
 
 from models.competitive_visual_prompt import VisualPrototypePrompt
+from models.original_style_tcp import OriginalStyleTCPPromptParameters
 from models.vpt import TimmViTVisualPromptEncoder
 from trainers.CoOp.coop_vpt_biomedclip import CVPCustomCLIP
 
@@ -56,11 +58,64 @@ def test_default_visual_tke_output_shape_and_parameter_count():
     assert sum(parameter.numel() for parameter in visual_tke.parameters()) == 461952
 
 
-def test_visual_tke_replaces_vpt_at_block8_once_and_then_propagates():
+def test_serial_visual_loss_reaches_text_mlp_without_fusion_prompt():
+    text = OriginalStyleTCPPromptParameters(16, 32, 12, fusion=True)
+    visual = VisualPrototypePrompt(prior_dim=32, hidden_dim=24, serial=True)
+    prototype = torch.randn(3, 16, requires_grad=True)
+    tokens = text.class_tokens(prototype)
+    result = visual(tokens)
+    assert result.shape == (3, 4, 24)
+    result.square().sum().backward()
+    assert text.down_projection.weight.grad.norm() > 0
+    assert text.up_projection.weight.grad.norm() > 0
+    assert visual.down_projection.weight.grad.norm() > 0
+    assert text.fusion_prompt.grad is None
+    assert prototype.grad is None
+
+
+@pytest.mark.parametrize("visual_fusion", [False, True])
+def test_serial_full_forward_shares_one_text_mlp_call(visual_fusion):
+    from test_original_style_tcp import _original_encoder
+
+    encoder, _, prompts, ids = _original_encoder()
+    model = CVPCustomCLIP.__new__(CVPCustomCLIP)
+    nn.Module.__init__(model)
+    model.prompt_learner = _FixedPromptLearner(prompts.detach())
+    model.tokenized_prompts = ids
+    model.text_encoder = encoder
+    model.image_encoder = TimmViTVisualPromptEncoder(
+        _TinyTimmVisual(), num_tokens=4, mode="deep", prompt_depth=8,
+        prototype_fusion=visual_fusion)
+    model.image_encoder.requires_grad_(False)
+    model.image_encoder.visual_prompt.requires_grad_(True)
+    model.logit_scale = nn.Parameter(torch.tensor(0.7), requires_grad=False)
+    model.dtype = torch.float32
+    model.competitive_visual_prompt = VisualPrototypePrompt(
+        prior_dim=32, hidden_dim=32, serial=True)
+    model.competitive_visual_insert_layer = 8
+    calls = []
+    handle = encoder.tcp_prompt.down_projection.register_forward_hook(
+        lambda *_: calls.append(1))
+    try:
+        logits, _, images = model(torch.randn(2, 3, 32, 32), return_features=True)
+        assert logits.shape == (2, 3)
+        images[..., 0].sum().backward()
+    finally:
+        handle.remove()
+    assert len(calls) == 1
+    assert encoder.tcp_prompt.up_projection.weight.grad.norm() > 0
+    if visual_fusion:
+        assert model.image_encoder.visual_prompt.fusion_prompt.grad.norm() > 0
+    assert all(p.grad is None for p in encoder.base_text_encoder.parameters())
+
+
+@pytest.mark.parametrize("fusion", [False, True])
+def test_visual_tke_replaces_vpt_at_block8_once_and_then_propagates(fusion):
     torch.manual_seed(17)
     visual = _TinyTimmVisual()
     adapter = TimmViTVisualPromptEncoder(
-        visual, num_tokens=4, mode="deep", dropout=0.0, prompt_depth=8
+        visual, num_tokens=4, mode="deep", dropout=0.0, prompt_depth=8,
+        prototype_fusion=fusion,
     )
     assert adapter.visual_prompt.prompt_embeddings.shape == (8, 4, 32)
     inputs = {index: [] for index in range(12)}
@@ -118,7 +173,10 @@ def test_visual_tke_replaces_vpt_at_block8_once_and_then_propagates():
     block8_input = inputs[8][0]
     expanded_shared = shared.unsqueeze(1).expand(-1, 3, -1, -1).reshape(6, 21, 32)
     torch.testing.assert_close(block8_input[:, :1], expanded_shared[:, :1])
-    torch.testing.assert_close(block8_input[:, 1:5], cvp.detach().reshape(6, 4, 32))
+    expected_prompt = cvp.detach().reshape(6, 4, 32)
+    if fusion:
+        expected_prompt = 0.5 * expected_prompt + 0.5 * adapter.visual_prompt.fusion_prompt
+    torch.testing.assert_close(block8_input[:, 1:5], expected_prompt)
     torch.testing.assert_close(block8_input[:, 5:], expanded_shared[:, 5:])
 
     for index in range(9, 12):
@@ -128,9 +186,28 @@ def test_visual_tke_replaces_vpt_at_block8_once_and_then_propagates():
 
     class_features.square().mean().backward()
     assert cvp.grad.norm() > 0
+    if fusion:
+        assert adapter.visual_prompt.fusion_prompt.grad.norm() > 0
     visual_prompt_grad = adapter.visual_prompt.prompt_embeddings.grad
     assert visual_prompt_grad[:8].norm() > 0
     assert torch.count_nonzero(visual_prompt_grad[8:]) == 0
+
+
+def test_visual_fusion_preserves_common_initialization_and_checkpoint():
+    from models.vpt import VisualPromptParameters
+
+    torch.manual_seed(19)
+    base = VisualPromptParameters(32, 4, 12, mode="deep", prompt_depth=8)
+    state = torch.random.get_rng_state()
+    torch.manual_seed(19)
+    fused = VisualPromptParameters(32, 4, 12, mode="deep", prompt_depth=8,
+                                   prototype_fusion=True)
+    assert torch.equal(state, torch.random.get_rng_state())
+    torch.testing.assert_close(base.prompt_embeddings, fused.prompt_embeddings)
+    restored = VisualPromptParameters(32, 4, 12, mode="deep", prompt_depth=8,
+                                      prototype_fusion=True)
+    restored.load_state_dict(fused.state_dict(), strict=True)
+    torch.testing.assert_close(restored.fusion_prompt, fused.fusion_prompt)
 
 
 def test_disabled_cvp_keeps_original_visual_forward_output():

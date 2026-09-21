@@ -24,10 +24,10 @@ TRAIN:
 TEST:
   PER_CLASS_RESULT: True
   COMPUTE_CMAT: True
-  FINAL_MODEL: "last_step"
+  FINAL_MODEL: "best_val"
   BEST_METRIC: "accuracy"
-  SAVE_BEST_METRICS: ["accuracy", "balanced_accuracy"]
-  SKIP_FINAL_TEST: True
+  SAVE_BEST_METRICS: ["accuracy"]
+  SKIP_FINAL_TEST: False
 
 MODEL:
   BACKBONE:
@@ -48,8 +48,13 @@ TRAINER:
     ENABLED: True
     DESCRIPTION_CACHE: ""
     INSERT_LAYER: 8
+    FUSION: True
+    FUSION_ALPHA: 0.5
   COMPETITIVE_VISUAL_PROMPT:
     ENABLED: True
     INSERT_LAYER: 8
     NUM_TOKENS: 4
     BOTTLENECK_DIM: 128
+    SERIAL: True
+    FUSION: True
+    FUSION_ALPHA: 0.5

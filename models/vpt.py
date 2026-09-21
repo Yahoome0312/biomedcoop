@@ -23,6 +23,8 @@ class VisualPromptParameters(nn.Module):
         dropout=0.0,
         patch_size=(16, 16),
         prompt_depth=None,
+        prototype_fusion=False,
+        fusion_alpha=0.5,
     ):
         super().__init__()
         if mode not in {"shallow", "deep"}:
@@ -51,6 +53,11 @@ class VisualPromptParameters(nn.Module):
         patch_area = math.prod(tuple(int(v) for v in patch_size))
         bound = math.sqrt(6.0 / float(3 * patch_area + self.embed_dim))
         nn.init.uniform_(self.prompt_embeddings, -bound, bound)
+        self.fusion_alpha = float(fusion_alpha) if prototype_fusion else None
+        if prototype_fusion:
+            with torch.random.fork_rng(devices=[]):
+                self.fusion_prompt = nn.Parameter(torch.empty(self.num_tokens, self.embed_dim))
+                nn.init.uniform_(self.fusion_prompt, -bound, bound)
 
     def for_layer(self, layer_idx, batch_size, dtype, device):
         index = 0 if self.mode == "shallow" else layer_idx
@@ -81,6 +88,8 @@ class TimmViTVisualPromptEncoder(nn.Module):
         mode="shallow",
         dropout=0.0,
         prompt_depth=None,
+        prototype_fusion=False,
+        fusion_alpha=0.5,
     ):
         super().__init__()
         self.base_visual = base_visual
@@ -101,6 +110,8 @@ class TimmViTVisualPromptEncoder(nn.Module):
             dropout=dropout,
             patch_size=patch_size,
             prompt_depth=prompt_depth,
+            prototype_fusion=prototype_fusion,
+            fusion_alpha=fusion_alpha,
         )
         self.mode = mode
         self.num_prompt_tokens = int(num_tokens)
@@ -233,6 +244,12 @@ class TimmViTVisualPromptEncoder(nn.Module):
             if prototype_prompts is None and self.mode == "deep":
                 x = self._replace_prompt(x, current_idx)
             if current_idx == layer_idx and prototype_prompts is not None:
+                alpha = self.visual_prompt.fusion_alpha
+                if alpha is not None:
+                    prototype_prompts = (
+                        alpha * prototype_prompts
+                        + (1 - alpha) * self.visual_prompt.fusion_prompt.to(dtype=x.dtype)
+                    )
                 x = self._replace_prompt_with_values(x, prototype_prompts)
             x = self._run_block(trunk, trunk.blocks[current_idx], x)
 

@@ -175,7 +175,8 @@ class OriginalStyleTCPPromptParameters(nn.Module):
 
     _META_FIELDS = ("mode", "prior_dim", "hidden_dim", "depth", "insert_layer", "num_tokens")
 
-    def __init__(self, prior_dim, hidden_dim, depth, insert_layer=8, enabled=True):
+    def __init__(self, prior_dim, hidden_dim, depth, insert_layer=8, enabled=True,
+                 fusion=False, fusion_alpha=0.5):
         super().__init__()
         prior_dim = int(prior_dim)
         hidden_dim = int(hidden_dim)
@@ -201,6 +202,13 @@ class OriginalStyleTCPPromptParameters(nn.Module):
         self.down_projection = nn.Linear(prior_dim, prior_dim // 4)
         self.activation = QuickGELU()
         self.up_projection = nn.Linear(prior_dim // 4, self.num_tokens * hidden_dim)
+        self.fusion = bool(fusion) and self.enabled
+        self.fusion_alpha = float(fusion_alpha)
+        if self.fusion:
+            # Keep existing parameter initialization and the training RNG unchanged.
+            with torch.random.fork_rng(devices=[]):
+                self.fusion_prompt = nn.Parameter(torch.empty(self.num_tokens, hidden_dim))
+                nn.init.normal_(self.fusion_prompt, std=0.02)
         for name, value in {
             "mode": 1,
             "prior_dim": prior_dim,
@@ -235,6 +243,11 @@ class OriginalStyleTCPPromptParameters(nn.Module):
 
     def prompt_for_layer(self, layer_idx, class_tokens, dtype, device):
         if self.enabled and int(layer_idx) == self.insert_layer:
+            if self.fusion:
+                class_tokens = (
+                    self.fusion_alpha * class_tokens
+                    + (1 - self.fusion_alpha) * self.fusion_prompt
+                )
             return class_tokens.to(device=device, dtype=dtype)
         return self.text_prompt.for_layer(
             layer_idx, class_tokens.shape[0], dtype, device
@@ -242,7 +255,7 @@ class OriginalStyleTCPPromptParameters(nn.Module):
 
 
 class OriginalStyleTCPBertTextEncoder(nn.Module):
-    """Frozen BERT tower with one Original-style TCP replacement at INSERT_LAYER."""
+    """Frozen BERT tower with one TCP replacement or fusion at INSERT_LAYER."""
 
     def __init__(
         self,
@@ -251,6 +264,8 @@ class OriginalStyleTCPBertTextEncoder(nn.Module):
         classnames,
         insert_layer=8,
         enabled=True,
+        fusion=False,
+        fusion_alpha=0.5,
     ):
         super().__init__()
         transformer = base_text_encoder.transformer
@@ -286,6 +301,8 @@ class OriginalStyleTCPBertTextEncoder(nn.Module):
             self.depth,
             self.insert_layer,
             enabled,
+            fusion,
+            fusion_alpha,
         )
 
     @property
@@ -304,7 +321,8 @@ class OriginalStyleTCPBertTextEncoder(nn.Module):
                 "description_source": "BIOMEDCOOP_TEMPLATES",
                 "description_count": self.description_count,
                 "aggregation": "mean50_class_prototype",
-                "connection": "single_layer_replacement",
+                "connection": "weighted_deep_prompt_fusion" if self.tcp_prompt.fusion else "single_layer_replacement",
+                "fusion_alpha": self.tcp_prompt.fusion_alpha if self.tcp_prompt.fusion else None,
                 "insert_layer_zero_based": self.insert_layer,
             }
         )
@@ -351,12 +369,13 @@ class OriginalStyleTCPBertTextEncoder(nn.Module):
             raise ValueError("Text sequence has too few prompt slots")
         return torch.cat((hidden_states[:, :1], values, hidden_states[:, end:]), dim=1)
 
-    def forward(self, prompts, tokenized_prompts):
+    def forward(self, prompts, tokenized_prompts, class_tokens=None):
         reference = self.tcp_prompt.down_projection.weight
         prompts = prompts.to(dtype=reference.dtype)
         attention_mask = self._attention_mask(tokenized_prompts, prompts)
         prompts, attention_mask = self._reserve_prompt_slots(prompts, attention_mask)
-        class_tokens = self.aggregate_class_tokens()
+        if class_tokens is None:
+            class_tokens = self.aggregate_class_tokens()
         first_prompt = self.tcp_prompt.prompt_for_layer(
             0, class_tokens, prompts.dtype, prompts.device
         )
