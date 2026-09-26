@@ -121,6 +121,7 @@ def extend_cfg(cfg):
     cfg.TRAINER.TCP.ENABLED = True
     cfg.TRAINER.TCP.INSERT_LAYER = 8
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = ""
+    cfg.TRAINER.TCP.FUSION_WEIGHT = 1.0
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 4  # number of context vectors
     cfg.TRAINER.COCOOP.CSC = False  # class-specific context

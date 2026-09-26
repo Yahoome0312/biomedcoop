@@ -120,6 +120,26 @@ def test_once_at_insert_layer_and_natural_propagation_with_gradients():
     assert all(parameter.grad is None for parameter in encoder.base_text_encoder.parameters())
 
 
+def test_insert_layer_blends_original_prompt_and_class_tokens():
+    encoder, _, prompts, ids = _original_encoder()
+    blended = OriginalStyleTCPBertTextEncoder(
+        copy.deepcopy(encoder.base_text_encoder), encoder.description_bank,
+        ["a", "b", "c"], fusion_weight=0.5,
+    ).eval()
+    assert blended.tcp_prompt.text_prompt.depth == 9
+    inputs = {}
+    handle = blended.transformer.encoder.layer[8].register_forward_pre_hook(
+        lambda _module, args: inputs.setdefault("block8", args[0].detach().clone())
+    )
+    try:
+        blended(prompts, ids)
+    finally:
+        handle.remove()
+    original = blended.tcp_prompt.text_prompt.for_layer(8, 3, prompts.dtype, prompts.device)
+    expected = 0.5 * original + 0.5 * blended.aggregate_class_tokens()
+    torch.testing.assert_close(inputs["block8"][:, 1:5], expected)
+
+
 def test_parameter_count_and_checkpoint_metadata():
     prompt = OriginalStyleTCPPromptParameters(512, 768, 12)
     assert sum(

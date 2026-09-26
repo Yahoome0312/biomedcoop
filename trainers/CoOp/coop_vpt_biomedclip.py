@@ -76,6 +76,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             raise ValueError("The retained CoOp setup requires four tokens")
         if int(cfg.TRAINER.TCP.INSERT_LAYER) < 1:
             raise ValueError("TCP INSERT_LAYER must be at least one")
+        if not 0 <= float(cfg.TRAINER.TCP.FUSION_WEIGHT) <= 1:
+            raise ValueError("TCP FUSION_WEIGHT must be in [0, 1]")
 
     def build_model(self):
         cfg = self.cfg
@@ -113,6 +115,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             classnames,
             insert_layer=tcp.INSERT_LAYER,
             enabled=self.tcp_enabled,
+            fusion_weight=tcp.FUSION_WEIGHT,
         )
         tcp_prompt = self.model.text_encoder.tcp_prompt
 
@@ -168,6 +171,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "tcp_enabled": self.tcp_enabled,
             "seed": int(cfg.SEED),
             "shots": int(cfg.DATASET.NUM_SHOTS),
+            "fusion_weight": float(self.cfg.TRAINER.TCP.FUSION_WEIGHT),
             "core_initialization_fingerprint": base_fingerprint,
             "core_parameters": base_entries,
             "parameter_counts": self._parameter_count_manifest(),
@@ -372,6 +376,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
             "tcp_enabled": self.tcp_enabled,
             "protocol": self.protocol,
+            "fusion_weight": float(self.cfg.TRAINER.TCP.FUSION_WEIGHT),
         }
         save_checkpoint(
             state,
@@ -402,6 +407,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             raise RuntimeError("Checkpoint training protocol does not match current run")
         if bool(checkpoint.get("tcp_enabled", True)) != self.tcp_enabled:
             raise RuntimeError("Checkpoint TCP setting does not match current run")
+        if float(self.cfg.TRAINER.TCP.FUSION_WEIGHT) != 1.0 and checkpoint.get("fusion_weight", float(self.cfg.TRAINER.TCP.FUSION_WEIGHT)) != float(self.cfg.TRAINER.TCP.FUSION_WEIGHT):
+            raise RuntimeError("Checkpoint fusion weight does not match current run")
         validate_tcp_checkpoint_state(
             checkpoint["state_dict"],
             self._unwrapped_model().text_encoder.tcp_prompt,

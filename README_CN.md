@@ -60,6 +60,10 @@ Text Encoder 的 block 0–7 使用正常 CoOp/Text Deep Prompt。进入 block 8
 
 当前实现不包含 5×10 grouping、LayerBasis、XProto/B+Delta、跨类别 centering、norm matching、layer gate 或多层 TCP 重注入。description bank 和 class prototype 均为 frozen buffer；BiomedCLIP backbone 也保持冻结。训练参数只有 CoOp context、Visual Deep Prompt、注入前 Text Deep Prompt 和共享 TKE。TCP prompt bundle 共 486,528 个可训练参数（TCP 开启时）。
 
+### 第 8 层 0.5 融合对照
+
+`TRAINER.TCP.FUSION_WEIGHT` 默认 1.0，保持原先在 block 8 完全替换 4 个 prompt slots 的行为。设为 0.5 时，block 8 额外学习一组普通 Text Deep Prompt，输入该 block 前将每个槽位设为 `0.5 × 原 Text Deep Prompt + 0.5 × Mean-50 Class Text Token`；block 0–7 仍使用普通 Text Deep Prompt，block 9–11 不再覆盖这 4 个槽位。融合参数与 TKE、CoOp context 和 Visual Deep Prompt 一起从头训练；此次对照仍使用 `ALPHA=0`，不启用图像引导。`scripts/run_fusion_experiments.py` 运行三数据集×4/8/16/32-shot×seed1/2/3共36组，输出至 `output/class_text_token_fusion_0p5_seed123`，与上文完整替换版的独立测试结果比较。
+
 `TRAINER.TCP.ENABLED=False` 时保留普通 Text Deep Prompt，冻结 TKE 参数并跳过 TCP replacement。TCP 没有实现模式选择项，配置只包含：
 
 ```yaml

@@ -175,7 +175,7 @@ class OriginalStyleTCPPromptParameters(nn.Module):
 
     _META_FIELDS = ("mode", "prior_dim", "hidden_dim", "depth", "insert_layer", "num_tokens")
 
-    def __init__(self, prior_dim, hidden_dim, depth, insert_layer=8, enabled=True):
+    def __init__(self, prior_dim, hidden_dim, depth, insert_layer=8, enabled=True, fusion_weight=1.0):
         super().__init__()
         prior_dim = int(prior_dim)
         hidden_dim = int(hidden_dim)
@@ -190,12 +190,13 @@ class OriginalStyleTCPPromptParameters(nn.Module):
         self.prior_dim = prior_dim
         self.insert_layer = insert_layer
         self.enabled = bool(enabled)
+        self.fusion_weight = float(fusion_weight)
         self.num_tokens = NUM_TOKENS
         self.hidden_dim = hidden_dim
         self.depth = depth
         self.text_prompt = TextPromptParameters(
             hidden_dim,
-            insert_layer if self.enabled else depth,
+            insert_layer + int(self.fusion_weight < 1.0) if self.enabled else depth,
             self.num_tokens,
         )
         self.down_projection = nn.Linear(prior_dim, prior_dim // 4)
@@ -235,7 +236,11 @@ class OriginalStyleTCPPromptParameters(nn.Module):
 
     def prompt_for_layer(self, layer_idx, class_tokens, dtype, device):
         if self.enabled and int(layer_idx) == self.insert_layer:
-            return class_tokens.to(device=device, dtype=dtype)
+            tokens = class_tokens.to(device=device, dtype=dtype)
+            if self.fusion_weight < 1.0:
+                original = self.text_prompt.for_layer(layer_idx, tokens.shape[0], dtype, device)
+                return (1.0 - self.fusion_weight) * original + self.fusion_weight * tokens
+            return tokens
         return self.text_prompt.for_layer(
             layer_idx, class_tokens.shape[0], dtype, device
         )
@@ -251,6 +256,7 @@ class OriginalStyleTCPBertTextEncoder(nn.Module):
         classnames,
         insert_layer=8,
         enabled=True,
+        fusion_weight=1.0,
     ):
         super().__init__()
         transformer = base_text_encoder.transformer
@@ -280,12 +286,14 @@ class OriginalStyleTCPBertTextEncoder(nn.Module):
         self.depth = len(transformer.encoder.layer)
         self.insert_layer = int(insert_layer)
         self.description_count = DESCRIPTION_COUNT
+        self.fusion_weight = float(fusion_weight)
         self.tcp_prompt = OriginalStyleTCPPromptParameters(
             self.prior_dim,
             self.hidden_dim,
             self.depth,
             self.insert_layer,
             enabled,
+            fusion_weight,
         )
 
     @property
@@ -304,7 +312,8 @@ class OriginalStyleTCPBertTextEncoder(nn.Module):
                 "description_source": "BIOMEDCOOP_TEMPLATES",
                 "description_count": self.description_count,
                 "aggregation": "mean50_class_prototype",
-                "connection": "single_layer_replacement",
+                "connection": "single_layer_fusion" if self.fusion_weight < 1.0 else "single_layer_replacement",
+                "fusion_weight": self.fusion_weight,
                 "insert_layer_zero_based": self.insert_layer,
             }
         )
