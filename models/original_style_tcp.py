@@ -175,7 +175,7 @@ class OriginalStyleTCPPromptParameters(nn.Module):
 
     _META_FIELDS = ("mode", "prior_dim", "hidden_dim", "depth", "insert_layer", "num_tokens")
 
-    def __init__(self, prior_dim, hidden_dim, depth, insert_layer=8, enabled=True, fusion_weight=1.0):
+    def __init__(self, prior_dim, hidden_dim, depth, insert_layer=7, enabled=True, fusion_weight=1.0):
         super().__init__()
         prior_dim = int(prior_dim)
         hidden_dim = int(hidden_dim)
@@ -254,7 +254,7 @@ class OriginalStyleTCPBertTextEncoder(nn.Module):
         base_text_encoder,
         projected_description_bank,
         classnames,
-        insert_layer=8,
+        insert_layer=7,
         enabled=True,
         fusion_weight=1.0,
     ):

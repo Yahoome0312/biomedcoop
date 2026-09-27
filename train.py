@@ -119,7 +119,7 @@ def extend_cfg(cfg):
     # The only active TCP is Original-style Biomedical TCP.
     cfg.TRAINER.TCP = CN()
     cfg.TRAINER.TCP.ENABLED = True
-    cfg.TRAINER.TCP.INSERT_LAYER = 8
+    cfg.TRAINER.TCP.INSERT_LAYER = 7
     cfg.TRAINER.TCP.DESCRIPTION_CACHE = ""
     cfg.TRAINER.TCP.FUSION_WEIGHT = 1.0
     cfg.TRAINER.COCOOP = CN()

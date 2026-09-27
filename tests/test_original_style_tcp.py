@@ -42,7 +42,7 @@ def _original_encoder(num_hidden_layers=12):
     tower.requires_grad_(False)
     bank = F.normalize(torch.randn(3, 50, 16), dim=-1).requires_grad_()
     encoder = OriginalStyleTCPBertTextEncoder(
-        tower, bank, ["a", "b", "c"]
+        tower, bank, ["a", "b", "c"], insert_layer=8
     ).eval()
     ids = torch.zeros(3, 16, dtype=torch.long)
     ids[:, :8] = torch.tensor([2, 10, 11, 12, 13, 20, 3, 21])
@@ -56,7 +56,7 @@ def test_mean50_order_independence_and_shared_tke():
     torch.testing.assert_close(encoder.class_prior, F.normalize(bank.mean(1), dim=-1))
     shuffled = bank.detach()[:, torch.randperm(50)]
     other = OriginalStyleTCPBertTextEncoder(
-        copy.deepcopy(encoder.base_text_encoder), shuffled, ["a", "b", "c"]
+        copy.deepcopy(encoder.base_text_encoder), shuffled, ["a", "b", "c"], insert_layer=8
     )
     other.tcp_prompt.load_state_dict(encoder.tcp_prompt.state_dict())
     torch.testing.assert_close(other.class_prior, encoder.class_prior)
@@ -120,28 +120,29 @@ def test_once_at_insert_layer_and_natural_propagation_with_gradients():
     assert all(parameter.grad is None for parameter in encoder.base_text_encoder.parameters())
 
 
-def test_insert_layer_blends_original_prompt_and_class_tokens():
+@pytest.mark.parametrize("insert_layer", [6, 7, 8, 9, 10, 11])
+def test_insert_layer_blends_original_prompt_and_class_tokens(insert_layer):
     encoder, _, prompts, ids = _original_encoder()
     blended = OriginalStyleTCPBertTextEncoder(
         copy.deepcopy(encoder.base_text_encoder), encoder.description_bank,
-        ["a", "b", "c"], fusion_weight=0.5,
+        ["a", "b", "c"], fusion_weight=0.5, insert_layer=insert_layer,
     ).eval()
-    assert blended.tcp_prompt.text_prompt.depth == 9
+    assert blended.tcp_prompt.text_prompt.depth == insert_layer + 1
     inputs = {}
-    handle = blended.transformer.encoder.layer[8].register_forward_pre_hook(
+    handle = blended.transformer.encoder.layer[insert_layer].register_forward_pre_hook(
         lambda _module, args: inputs.setdefault("block8", args[0].detach().clone())
     )
     try:
         blended(prompts, ids)
     finally:
         handle.remove()
-    original = blended.tcp_prompt.text_prompt.for_layer(8, 3, prompts.dtype, prompts.device)
+    original = blended.tcp_prompt.text_prompt.for_layer(insert_layer, 3, prompts.dtype, prompts.device)
     expected = 0.5 * original + 0.5 * blended.aggregate_class_tokens()
     torch.testing.assert_close(inputs["block8"][:, 1:5], expected)
 
 
 def test_parameter_count_and_checkpoint_metadata():
-    prompt = OriginalStyleTCPPromptParameters(512, 768, 12)
+    prompt = OriginalStyleTCPPromptParameters(512, 768, 12, insert_layer=8)
     assert sum(
         parameter.numel()
         for name, parameter in prompt.named_parameters()
@@ -167,4 +168,4 @@ def test_tcp_config_has_no_implementation_mode():
     assert "MODE" not in cfg.TRAINER.TCP
     assert "CONFUSION_AWARE" not in cfg.TRAINER
     assert "EXPERT_MOE" not in cfg.TRAINER
-    assert cfg.TRAINER.TCP.INSERT_LAYER == 8
+    assert cfg.TRAINER.TCP.INSERT_LAYER == 7

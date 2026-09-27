@@ -1,5 +1,7 @@
 """Run the 0.5 Text Deep Prompt + 0.5 Class Text Token comparison."""
 
+from functools import partial
+
 from scripts import run_three_methods as experiments
 
 
@@ -10,6 +12,7 @@ experiments.CASES = [("fusion", dataset, shots, seed)
                      for shots in experiments.SHOTS
                      for seed in experiments.SEEDS]
 experiments.GPUS = (0, 1, 3, 4, 5)
+experiments.run_case = partial(experiments.run_case, insert_layer=8)
 
 
 if __name__ == "__main__":

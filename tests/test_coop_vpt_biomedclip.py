@@ -113,7 +113,7 @@ def test_tcp_is_the_only_optional_prompt_component():
     assert "MODE" not in cfg.TRAINER.TCP
     assert "CONFUSION_AWARE" not in cfg.TRAINER
     assert "EXPERT_MOE" not in cfg.TRAINER
-    assert cfg.TRAINER.TCP.INSERT_LAYER == 8
+    assert cfg.TRAINER.TCP.INSERT_LAYER == 7
 
 
 def test_classification_loss_has_no_auxiliary_branch():

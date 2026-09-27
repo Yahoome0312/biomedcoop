@@ -34,9 +34,9 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def run_case(gpu, case):
+def run_case(gpu, case, insert_layer=7, output_dir=None):
     method, dataset, shots, seed = case
-    dest = run_dir(case)
+    dest = Path(output_dir) if output_dir is not None else run_dir(case)
     if (dest / "test_metrics.json").exists():
         return "already_complete"
     dest.mkdir(parents=True, exist_ok=True)
@@ -45,7 +45,7 @@ def run_case(gpu, case):
                HF_HUB_OFFLINE="1")
     is_coop = method == "coop"
     opts = ["DATASET.NUM_SHOTS", str(shots), "TEST.SKIP_FINAL_TEST", "True",
-            "TEST.SAVE_BEST_METRICS", "['accuracy']"]
+            "TEST.SAVE_BEST_METRICS", "['accuracy']", "TRAINER.TCP.INSERT_LAYER", str(insert_layer)]
     if not is_coop:
         opts += ["TRAINER.TCP.ENABLED", str(method in ("class_text_token", "fusion")),
                  "TRAINER.TCP.FUSION_WEIGHT",
@@ -66,7 +66,7 @@ def run_case(gpu, case):
             raise RuntimeError(f"Training exited {code}: {dest}")
     command = [PYTHON, "-u", str(ROOT / "scripts/evaluate_three_methods.py"),
                "--run-dir", str(dest), "--method", method, "--dataset", dataset,
-               "--shots", str(shots), "--seed", str(seed)]
+               "--shots", str(shots), "--seed", str(seed), "--insert-layer", str(insert_layer)]
     with (dest / "test.stdout.log").open("a") as log:
         code = subprocess.run(command, cwd=ROOT, env=env, stdout=log,
                               stderr=subprocess.STDOUT).returncode

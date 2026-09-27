@@ -56,9 +56,9 @@ D_proj → D_proj / 4 → QuickGELU → 4 × hidden_dim
 
 TKE 输出 reshape 为 `[C, 4, hidden_dim]`，默认 hidden size 为 768，因此每个类别得到 4 个 class-aware prompt tokens。TKE 参数量为 461,952。
 
-Text Encoder 的 block 0–7 使用正常 CoOp/Text Deep Prompt。进入 block 8 前，CLS 后的 4 个 prompt slots 一次性替换为对应类别的 TKE tokens；block 9–11 直接使用上一层 hidden states，不再重新生成或覆盖 TCP tokens。
+默认插入位置为 layer 7（0起始编号）。Text Encoder 的 block 0–6 使用正常 CoOp/Text Deep Prompt。进入 block 7 前，CLS 后的 4 个 prompt slots 一次性替换为对应类别的 TKE tokens；block 8–11 直接使用上一层 hidden states，不再重新生成或覆盖 TCP tokens。设 `FUSION_WEIGHT=0.5` 时，在block7前与该层普通Text Deep Prompt各0.5融合。历史层8checkpoint训练或测试时须显式指定 `INSERT_LAYER=8`；历史层8融合入口 `run_fusion_experiments.py` 已显式保持层8。
 
-当前实现不包含 5×10 grouping、LayerBasis、XProto/B+Delta、跨类别 centering、norm matching、layer gate 或多层 TCP 重注入。description bank 和 class prototype 均为 frozen buffer；BiomedCLIP backbone 也保持冻结。训练参数只有 CoOp context、Visual Deep Prompt、注入前 Text Deep Prompt 和共享 TKE。TCP prompt bundle 共 486,528 个可训练参数（TCP 开启时）。
+当前实现不包含 5×10 grouping、LayerBasis、XProto/B+Delta、跨类别 centering、norm matching、layer gate 或多层 TCP 重注入。description bank 和 class prototype 均为 frozen buffer；BiomedCLIP backbone 也保持冻结。训练参数只有 CoOp context、Visual Deep Prompt、注入前 Text Deep Prompt 和共享 TKE。默认层7直接替换TCP prompt bundle共483,456个可训练参数；层7融合为486,528。
 
 ### 第 8 层 0.5 融合对照
 
@@ -71,7 +71,7 @@ TRAINER:
   TCP:
     ENABLED: True
     DESCRIPTION_CACHE: ""
-    INSERT_LAYER: 8
+    INSERT_LAYER: 7
 ```
 
 ## 批量运行
@@ -104,6 +104,8 @@ done
 | 原生 CoOp | `CoOp_BiomedCLIP` | `configs/trainers/CoOp/dermamnist_native.yaml` |
 | CoOp + Visual/Text VPT + TCP | `CoOpVPT_BiomedCLIP` | `configs/trainers/CoOp/dermamnist_native_vpt_tcp.yaml` |
 | BiomedCoOp | `BiomedCoOp_BiomedCLIP` | `configs/trainers/BiomedCoOp/few_shot/dermamnist.yaml` |
+
+后半段插入位置实验入口为 `scripts/run_fusion_layers.py`：BERT block 采用0起始编号，后半段为6–11，补跑6/7/9/10/11共180组，层8复用已完成的36组融合结果。输出目录 `output/class_text_token_fusion_0p5_layers6_11_seed123` 按 `layer_<L>/<dataset>/shots_<K>/seed<S>` 保存，各层沿用0.5融合、100 epoch与验证accuracy选模。测试入口增加 `--insert-layer`，与训练配置一致；汇总表含层8历史对照。不同插入位置会改变普通Text Deep Prompt的层数和参数量，其余设置保持原配置。
 
 ## Checkpoint 与验证
 
