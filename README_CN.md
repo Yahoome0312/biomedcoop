@@ -118,3 +118,26 @@ python -m pytest tests -q
 ```
 
 测试使用小型 BERT 和 ViT，不需要下载真实 BiomedCLIP 权重；真实权重集成测试需要显式设置 `RUN_BIOMEDCLIP_INTEGRATION=1`。
+
+## Text-Guided Visual Semantic Distillation
+
+最终固定参数为 `WEIGHT=0.1`、`TEMPERATURE=0.5`，总损失 `L=CE+0.1 L_sem`。`TRAINER.SEMANTIC_DISTILL.ENABLED` 默认 False，保留 Original CE baseline；固定实验入口显式启用蒸馏。模型结构、文本特征和测试分类前向保持原样，不向视觉 Transformer 插入文本 token。
+
+同次前向得到归一化图像 `v:[B,512]`、类别文本 `t:[C,512]`。训练计算 `R=detach(t) @ detach(t).T:[C,C]`，选 GT 行 `R[y]:[B,C]`，teacher 为 `softmax(R[y]/0.5).detach()`；student 为 `v @ detach(t).T:[B,C]`（不乘 logit_scale）。`L_sem=KL(teacher || softmax(student/0.5))`，使用 batchmean，无温度平方因子。semantic loss 只更新 Visual Deep Prompt；CE 继续更新 Visual/Text Deep Prompt、CoOp 和共享 TKE。冻结 BiomedCLIP backbone 无参数梯度。
+
+每批通过 autograd.grad 记录 semantic_grad_norm；首批单独 loss_sem.backward 验证所有非视觉提示参数无梯度，清空后正常联合更新。日志/TensorBoard 记录 loss_ce、loss_sem、total_loss、semantic_grad_norm；semantic_gradient_audit.json 保存六种张量形状和梯度隔离结果。监控梯度的额外视觉反传会增加训练耗时。
+
+测试只执行标准归一化 cosine logits，不计算文本关系、teacher、student 或 KL，不需要 GT。checkpoint 保存蒸馏配置，续训校验开关/权重/温度；测试仍加载正常 prompt bundle。
+
+`scripts/run_semantic_distill.py` 是唯一固定实验队列：DermaMNIST/Kvasir/CHMNIST × 4/8/16/32-shot × seed1/2/3，共36组、12个setting，layer7、FUSION_WEIGHT=1.0、λ=0.1、τ=0.5。使用 GPU0/1/2/6/7，每卡两任务；不使用GPU4。运行命令：
+
+```bash
+conda activate /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop
+OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 PYTHONPATH=. python -m scripts.run_semantic_distill
+```
+
+输出 `output/text_guided_visual_semantic_distill_lambda0p1_tau0p5_seed123`，按 validation accuracy 选 checkpoint 后独立 test。Original 对照复用 `output/class_text_token_replacement_layer7_seed123/class_text_token` 的同配置结果。汇总均值±样本std（ddof=1）、Δ、12-setting等权平均、win/tie/loss、最大下降及损失/梯度CSV/PNG曲线。已有完成结果跳过，未完成训练沿用现有checkpoint续训。
+
+`scripts/validate_semantic_distill.py` 保留真实三数据集一步训练、梯度隔离、关闭开关输出精确比较及checkpoint保存/加载验证；小模型回归测试验证固定λ/τ损失公式及semantic/CE梯度。网格搜索、pilot接续和GPU交接脚本已移除。
+
+历史网格324组结果保留在 `output/text_guided_visual_semantic_distill_grid_seed123`。本次选择固定λ=0.1、τ=0.5，12-setting等权test为74.5975%，比Original74.1650%提升0.4325pp，8升/0平/4降，最大单setting下降0.8313pp。三个数据集各自四个shot的等权平均均提升：DermaMNIST+0.5528pp、Kvasir+0.3125pp、CHMNIST+0.4322pp。该选择以三个数据集平均均不下降为依据，仍有单setting下降。选定36组历史checkpoint和曲线位于 `output/text_guided_visual_semantic_distill_grid_seed123/lambda_0.1_tau_0.5`，完整历史统计见all_results_report.md、all_results_detailed.csv、all_settings_summary.csv。

@@ -47,9 +47,10 @@ def run_case(gpu, case, insert_layer=7, output_dir=None):
     opts = ["DATASET.NUM_SHOTS", str(shots), "TEST.SKIP_FINAL_TEST", "True",
             "TEST.SAVE_BEST_METRICS", "['accuracy']", "TRAINER.TCP.INSERT_LAYER", str(insert_layer)]
     if not is_coop:
-        opts += ["TRAINER.TCP.ENABLED", str(method in ("class_text_token", "fusion")),
+        opts += ["TRAINER.TCP.ENABLED", str(method in ("class_text_token", "fusion", "semantic_distill")),
                  "TRAINER.TCP.FUSION_WEIGHT",
                  "0.5" if method == "fusion" else "1.0"]
+    opts += ["TRAINER.SEMANTIC_DISTILL.ENABLED", str(method == "semantic_distill")]
     checkpoint_dir = "prompt_learner" if is_coop else "prompt_parameters"
     if not (dest / checkpoint_dir / "model.pth.tar-100").exists():
         command = [PYTHON, "-u", str(ROOT / "train.py"), "--root", str(ROOT / "data"),

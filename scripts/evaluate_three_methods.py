@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--method", choices=("coop", "deep_prompt", "class_text_token", "fusion"), required=True)
+    parser.add_argument("--method", choices=("coop", "deep_prompt", "class_text_token", "fusion", "semantic_distill"), required=True)
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--shots", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
@@ -29,9 +29,10 @@ def main():
     opts = ["DATASET.NUM_SHOTS", str(args.shots), "TEST.SKIP_FINAL_TEST", "True",
             "TEST.SAVE_BEST_METRICS", "['accuracy']", "TRAINER.TCP.INSERT_LAYER", str(args.insert_layer)]
     if not is_coop:
-        opts += ["TRAINER.TCP.ENABLED", str(args.method in ("class_text_token", "fusion")),
+        opts += ["TRAINER.TCP.ENABLED", str(args.method in ("class_text_token", "fusion", "semantic_distill")),
                  "TRAINER.TCP.FUSION_WEIGHT",
                  "0.5" if args.method == "fusion" else "1.0"]
+    opts += ["TRAINER.SEMANTIC_DISTILL.ENABLED", str(args.method == "semantic_distill")]
     cfg_args = SimpleNamespace(
         root=str(ROOT / "data"), output_dir=str(run_dir / "evaluation"), resume="",
         source_domains=None, target_domains=None, transforms=None,
@@ -51,6 +52,8 @@ def main():
         "method": args.method, "dataset": args.dataset, "shots": args.shots,
         "seed": args.seed, "selected_epoch": selection["epoch"],
         "insert_layer": args.insert_layer,
+        "semantic_weight": cfg.TRAINER.SEMANTIC_DISTILL.WEIGHT,
+        "semantic_temperature": cfg.TRAINER.SEMANTIC_DISTILL.TEMPERATURE,
         "validation_accuracy": selection["selection_value"],
         "test_accuracy": float(trainer.last_eval_results["accuracy"]),
         "test_metrics": {key: float(value) for key, value in trainer.last_eval_results.items()},

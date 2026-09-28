@@ -118,6 +118,7 @@ def test_tcp_is_the_only_optional_prompt_component():
 
 def test_classification_loss_has_no_auxiliary_branch():
     trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.cfg = _tcp_cfg()
     trainer.model = lambda image: image
     logits = torch.tensor([[2.0, -1.0], [-0.5, 1.5]], requires_grad=True)
     labels = torch.tensor([0, 1])
@@ -144,3 +145,48 @@ def test_cached_biomedclip_deep_vpt_forward():
     model.eval()
     output = model.visual(torch.randn(1, 3, 224, 224))
     assert output.shape == (1, 512)
+
+
+def test_semantic_loss_matches_kl_and_isolates_text_gradients(tmp_path):
+    weight, temperature = 0.1, 0.5
+    from torch.nn import functional as F
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.image_encoder = nn.Module()
+            self.image_encoder.visual_prompt = nn.Linear(512, 512, bias=False)
+            self.text_prompt = nn.Parameter(torch.randn(3, 512))
+            self.tke = nn.Linear(512, 512)
+            self.backbone = nn.Linear(512, 512, bias=False)
+            self.backbone.requires_grad_(False)
+        def forward(self, image, return_features=False):
+            v = F.normalize(self.image_encoder.visual_prompt(self.backbone(image)), dim=-1)
+            t = F.normalize(self.tke(self.text_prompt), dim=-1)
+            logits = 7 * v @ t.t()
+            return (logits, t, v) if return_features else logits
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.cfg = _tcp_cfg()
+    trainer.cfg.OUTPUT_DIR = str(tmp_path)
+    trainer.cfg.TRAINER.SEMANTIC_DISTILL.ENABLED = True
+    assert trainer.cfg.TRAINER.SEMANTIC_DISTILL.WEIGHT == weight
+    assert trainer.cfg.TRAINER.SEMANTIC_DISTILL.TEMPERATURE == temperature
+    trainer.model = Model()
+    trainer._semantic_audit_complete = False
+    trainer.model_zero_grad = lambda: trainer.model.zero_grad(set_to_none=True)
+    images, labels = torch.randn(2, 512), torch.tensor([0, 2])
+    output, losses = trainer._compute_training_loss(images, labels)
+    _, t, v = trainer.model(images, return_features=True)
+    expected = F.kl_div(F.log_softmax(v @ t.detach().t() / temperature, dim=-1),
+                        F.softmax((t.detach() @ t.detach().t())[labels] / temperature, dim=-1),
+                        reduction='batchmean')
+    torch.testing.assert_close(losses['loss_sem'], expected)
+    torch.testing.assert_close(losses['loss'], F.cross_entropy(output, labels) + weight * expected)
+    losses['loss_sem'].backward(retain_graph=True)
+    assert trainer.model.image_encoder.visual_prompt.weight.grad.norm() > 0
+    assert trainer.model.text_prompt.grad is None
+    assert all(p.grad is None for p in trainer.model.tke.parameters())
+    assert trainer.model.backbone.weight.grad is None
+    trainer.model_zero_grad()
+    losses['loss'].backward()
+    assert trainer.model.text_prompt.grad.norm() > 0
+    assert trainer.model.tke.weight.grad.norm() > 0
