@@ -50,7 +50,8 @@ def summarize():
                         tag = next((t for t in tags if t.endswith('/'+name)), None)
                         if tag:
                             values = acc.Scalars(tag)
-                            axis.plot([v.step for v in values], [v.value for v in values], label=name)
+                            axis.plot([v.step for v in values], [v.value for v in values], label=name,
+                                      marker='.' if name == 'semantic_grad_norm' else None)
                             curve_rows += [{'metric':name,'step':v.step,'value':v.value} for v in values]
                     for axis in axes:
                         axis.legend(); axis.set_xlabel('training step')

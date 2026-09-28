@@ -125,9 +125,9 @@ python -m pytest tests -q
 
 同次前向得到归一化图像 `v:[B,512]`、类别文本 `t:[C,512]`。训练计算 `R=detach(t) @ detach(t).T:[C,C]`，选 GT 行 `R[y]:[B,C]`，teacher 为 `softmax(R[y]/0.5).detach()`；student 为 `v @ detach(t).T:[B,C]`（不乘 logit_scale）。`L_sem=KL(teacher || softmax(student/0.5))`，使用 batchmean，无温度平方因子。semantic loss 只更新 Visual Deep Prompt；CE 继续更新 Visual/Text Deep Prompt、CoOp 和共享 TKE。冻结 BiomedCLIP backbone 无参数梯度。
 
-每批通过 autograd.grad 记录 semantic_grad_norm；首批单独 loss_sem.backward 验证所有非视觉提示参数无梯度，清空后正常联合更新。日志/TensorBoard 记录 loss_ce、loss_sem、total_loss、semantic_grad_norm；semantic_gradient_audit.json 保存六种张量形状和梯度隔离结果。监控梯度的额外视觉反传会增加训练耗时。
+默认 `GRAD_NORM_INTERVAL=0`，只在首个训练batch通过 autograd.grad 记录 semantic_grad_norm，并单独 loss_sem.backward 验证所有非视觉提示参数无梯度，清空后正常联合更新；后续batch不为监控额外反传。设为1恢复历史逐batch监控，设为N>1每N步采样（从此次训练/恢复启动首批计数）。loss_ce、loss_sem、total_loss正常记录，semantic_grad_norm仅在实际采样步直接写入TensorBoard，不把旧值重复记成新值；TensorBoard使用epoch×num_batches+batch_idx的全局步数，与loss曲线及续训对齐。semantic_gradient_audit.json仍保存六种张量形状及首次梯度隔离结果。
 
-测试只执行标准归一化 cosine logits，不计算文本关系、teacher、student 或 KL，不需要 GT。checkpoint 保存蒸馏配置，续训校验开关/权重/温度；测试仍加载正常 prompt bundle。
+测试只执行标准归一化 cosine logits，不计算文本关系、teacher、student 或 KL，不需要 GT。checkpoint 保存蒸馏配置，续训仅校验训练核心开关/权重/温度，监控频率不参与兼容性限制；旧checkpoint没有GRAD_NORM_INTERVAL也可恢复。测试仍加载正常prompt bundle。evaluator从实际加载的checkpoint["semantic_distill"]记录semantic_enabled、semantic_weight、semantic_temperature，来源标记checkpoint；旧checkpoint缺少元数据时写null并标记unavailable，绝不以当前evaluation config的默认值冒充训练参数。此修复不改变分类预测。
 
 `scripts/run_semantic_distill.py` 是唯一固定实验队列：DermaMNIST/Kvasir/CHMNIST × 4/8/16/32-shot × seed1/2/3，共36组、12个setting，layer7、FUSION_WEIGHT=1.0、λ=0.1、τ=0.5。使用 GPU0/1/2/6/7，每卡两任务；不使用GPU4。运行命令：
 

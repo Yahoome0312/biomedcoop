@@ -128,3 +128,7 @@
 [2026-09-28] 用户要求使用剩余所有空闲GPU：当前全部空闲卡为2/3/4/6，本轮扩至四卡，每卡一个任务。新增独立run_all_idle.py，仅SIGSTOP旧manager3747420防止重复派发，保留当前三组训练PID3747428/3747427/3747429；新队列通过pidfd等它们自然退出后接续测试和后续任务，GPU4立即执行DermaMNIST8-shot seed1。全部完成后清理已暂停旧manager；其他用户GPU0/1/5/7任务不受影响，λ/τ及36组范围不变。
 [2026-09-28] 交接环境修正：biocoop Python未暴露os.pidfd_open，首个交接runner的等待失败后误启动三个额外加载进程；已暂停该manager3748108并终止本轮额外PID3748180/3748181/3748183，保留原三组训练及GPU4训练3748116。等待改为Linux pidfd系统调用（ctypes），最终tmux为semantic-fixed-four-gpus，日志_manager/four_gpu_manager.log。原始回归25 passed、1 skipped。
 [2026-09-28] 最终运行确认：有效会话semantic-fixed-final，manager PID3764197，日志_manager/final_manager.log；GPU2/3/4/6四张卡均已进入真实训练（GPU利用率约90–92%，显存4.6–4.8GiB），4-shot seed1已到epoch15、GPU4 8-shot seed1到epoch7。旧manager均保持暂停，原训练未重启；模型参数固定0.1/0.5。此前中间会话名称不代表当前有效队列。
+
+[2026-09-28] 核对并修复结果追踪bug：CoOpVPT.load_model返回实际训练checkpoint，evaluate_three_methods从semantic_distill元数据记录enabled/λ/τ及checkpoint来源，不再读取当前eval默认参数；缺失元数据标null/unavailable。修复性能问题：GRAD_NORM_INTERVAL默认0首批监控与隔离审计，1保留历史逐batch计算，N周期采样；未采样不执行autograd.grad，不上报虚假/沿用梯度范数，实际采样直接写TensorBoard，曲线用点标记显示首批单点。续训仅校验ENABLED/WEIGHT/TEMPERATURE，忽略监控频率变化并兼容旧无频率字段checkpoint；损失和分类前向不改，历史output/checkpoint不重写。33 passed、1 skipped；定向测试覆盖旧参数1.0/0.2与当前默认0.1/0.5的记录区别、元数据缺失、旧checkpoint续训、监控0/1/2的调用次数及四步AdamW损失/梯度/参数逐值一致。
+
+[2026-09-28] 独立审查确认核心修复无实质问题；按审查建议，semantic梯度TensorBoard采用epoch*num_batches+batch_idx全局步数，避免续训日志从0覆盖/错位。新增稀疏日志测试覆盖恢复训练step12/14，仅实际采样记录，不重复旧值。只读抽查真实历史checkpoint，1.0/0.2与0.1/0.5元数据均存在且可加载，旧文件无新增监控字段。

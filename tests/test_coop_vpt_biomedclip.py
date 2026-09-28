@@ -172,6 +172,7 @@ def test_semantic_loss_matches_kl_and_isolates_text_gradients(tmp_path):
     assert trainer.cfg.TRAINER.SEMANTIC_DISTILL.TEMPERATURE == temperature
     trainer.model = Model()
     trainer._semantic_audit_complete = False
+    trainer._semantic_step = 0
     trainer.model_zero_grad = lambda: trainer.model.zero_grad(set_to_none=True)
     images, labels = torch.randn(2, 512), torch.tensor([0, 2])
     output, losses = trainer._compute_training_loss(images, labels)
@@ -190,3 +191,127 @@ def test_semantic_loss_matches_kl_and_isolates_text_gradients(tmp_path):
     losses['loss'].backward()
     assert trainer.model.text_prompt.grad.norm() > 0
     assert trainer.model.tke.weight.grad.norm() > 0
+
+
+@pytest.mark.parametrize('interval, expected_calls', [(0, 1), (1, 4), (2, 2)])
+def test_semantic_gradient_sampling_preserves_loss_gradients_and_updates(tmp_path, monkeypatch, interval, expected_calls):
+    import copy
+    from torch.nn import functional as F
+
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.image_encoder = nn.Module()
+            self.image_encoder.visual_prompt = nn.Linear(8, 8)
+            self.text = nn.Parameter(torch.randn(3, 8))
+
+        def forward(self, image, return_features=False):
+            v = F.normalize(self.image_encoder.visual_prompt(image), dim=-1)
+            t = F.normalize(self.text, dim=-1)
+            logits = 7 * v @ t.t()
+            return logits, t, v
+
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.cfg = _tcp_cfg()
+    trainer.cfg.OUTPUT_DIR = str(tmp_path)
+    trainer.cfg.TRAINER.SEMANTIC_DISTILL.ENABLED = True
+    trainer.cfg.TRAINER.SEMANTIC_DISTILL.GRAD_NORM_INTERVAL = interval
+    trainer.model = Model()
+    trainer._semantic_audit_complete = False
+    trainer._semantic_step = 0
+    trainer.model_zero_grad = lambda: trainer.model.zero_grad(set_to_none=True)
+    reference = copy.deepcopy(trainer.model)
+    optimizer = torch.optim.AdamW(trainer.model.parameters(), lr=.001)
+    reference_optimizer = torch.optim.AdamW(reference.parameters(), lr=.001)
+    original_grad = torch.autograd.grad
+    calls = []
+
+    def counted_grad(*args, **kwargs):
+        calls.append(1)
+        return original_grad(*args, **kwargs)
+
+    monkeypatch.setattr(torch.autograd, 'grad', counted_grad)
+    for step in range(4):
+        images, labels = torch.randn(2, 8), torch.tensor([0, 2])
+        trainer.model_zero_grad()
+        reference.zero_grad(set_to_none=True)
+        output, losses = trainer._compute_training_loss(images, labels)
+        ref_output, t, v = reference(images)
+        teacher = F.softmax((t.detach() @ t.detach().t())[labels] / .5, dim=-1)
+        semantic = F.kl_div(F.log_softmax(v @ t.detach().t() / .5, dim=-1), teacher, reduction='batchmean')
+        expected = F.cross_entropy(ref_output, labels) + .1 * semantic
+        torch.testing.assert_close(output, ref_output, rtol=0, atol=0)
+        torch.testing.assert_close(losses['loss'], expected, rtol=0, atol=0)
+        assert ('semantic_grad_norm' in losses) == (step == 0 or interval > 0 and step % interval == 0)
+        losses['loss'].backward()
+        expected.backward()
+        for p, q in zip(trainer.model.parameters(), reference.parameters()):
+            torch.testing.assert_close(p.grad, q.grad, rtol=0, atol=0)
+        optimizer.step()
+        reference_optimizer.step()
+        for p, q in zip(trainer.model.parameters(), reference.parameters()):
+            torch.testing.assert_close(p, q, rtol=0, atol=0)
+    assert len(calls) == expected_calls
+
+
+def test_resume_accepts_old_semantic_metadata_and_changed_monitor_interval(tmp_path, monkeypatch):
+    import trainers.CoOp.coop_vpt_biomedclip as module
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.cfg = _tcp_cfg()
+    trainer.cfg.TRAINER.SEMANTIC_DISTILL.ENABLED = True
+    trainer.cfg.TRAINER.SEMANTIC_DISTILL.GRAD_NORM_INTERVAL = 100
+    trainer.prompt_parameters = nn.Linear(1, 1)
+    trainer.optim = trainer.sched = trainer.scaler = None
+    trainer._validate_checkpoint_metadata = lambda checkpoint: None
+    prompt = tmp_path/'prompt_parameters'
+    prompt.mkdir()
+    (prompt/'checkpoint').write_text('model.pth.tar-10')
+    saved = {'ENABLED': True, 'WEIGHT': .1, 'TEMPERATURE': .5}
+    monkeypatch.setattr(module, 'load_checkpoint', lambda path: {'semantic_distill': saved})
+    monkeypatch.setattr(module, 'resume_from_checkpoint', lambda *args: 10)
+    assert trainer.resume_model_if_exist(str(tmp_path)) == 10
+    saved['GRAD_NORM_INTERVAL'] = 1
+    assert trainer.resume_model_if_exist(str(tmp_path)) == 10
+    saved['WEIGHT'] = 1.
+    with pytest.raises(RuntimeError, match='configuration does not match'):
+        trainer.resume_model_if_exist(str(tmp_path))
+
+
+def test_load_model_returns_training_checkpoint_metadata(tmp_path):
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    folder = tmp_path/'prompt_parameters'
+    folder.mkdir()
+    (folder/'model-best.pth.tar').touch()
+    expected = {'semantic_distill': {'ENABLED': True, 'WEIGHT': 1., 'TEMPERATURE': .2}}
+    trainer.load_prompt_checkpoint = lambda path: expected
+    assert trainer.load_model(str(tmp_path)) is expected
+
+
+def test_sparse_gradient_logging_does_not_repeat_stale_values():
+    trainer = object.__new__(CoOpVPT_BiomedCLIP)
+    trainer.cfg = _tcp_cfg()
+    parameter = nn.Parameter(torch.tensor([[2., 0.], [0., 2.]]))
+    trainer.optim = torch.optim.AdamW([parameter], lr=.001)
+    trainer._semantic_step = 0
+    trainer.parse_batch_train = lambda batch: batch
+    trainer.model_zero_grad = lambda: trainer.optim.zero_grad(set_to_none=True)
+    trainer.model_backward = lambda loss: loss.backward()
+    trainer._audit_gradients_once = lambda: None
+    trainer.epoch, trainer.batch_idx, trainer.num_batches = 3, 0, 4
+    records = []
+    trainer.write_scalar = lambda *args: records.append(args)
+
+    def losses(image, labels):
+        step = trainer._semantic_step
+        trainer._semantic_step += 1
+        result = {'loss': torch.nn.functional.cross_entropy(parameter, labels)}
+        if step % 2 == 0:
+            result['semantic_grad_norm'] = torch.tensor(step + .5)
+        return parameter, result
+
+    trainer._compute_training_loss = losses
+    for step in range(3):
+        trainer.batch_idx = step
+        summary = trainer.forward_backward((None, torch.tensor([0, 1])))
+        assert 'semantic_grad_norm' not in summary
+    assert records == [('train/semantic_grad_norm', .5, 12), ('train/semantic_grad_norm', 2.5, 14)]

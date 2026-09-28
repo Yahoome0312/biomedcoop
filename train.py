@@ -126,6 +126,7 @@ def extend_cfg(cfg):
     cfg.TRAINER.SEMANTIC_DISTILL.ENABLED = False
     cfg.TRAINER.SEMANTIC_DISTILL.WEIGHT = 0.1
     cfg.TRAINER.SEMANTIC_DISTILL.TEMPERATURE = 0.5
+    cfg.TRAINER.SEMANTIC_DISTILL.GRAD_NORM_INTERVAL = 0
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 4  # number of context vectors
     cfg.TRAINER.COCOOP.CSC = False  # class-specific context

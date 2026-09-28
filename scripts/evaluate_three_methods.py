@@ -46,14 +46,17 @@ def main():
     cfg = train.setup_cfg(cfg_args)
     set_random_seed(args.seed)
     trainer = build_trainer(cfg)
-    trainer.load_model(str(run_dir))
+    checkpoint = trainer.load_model(str(run_dir))
+    semantic = (checkpoint or {}).get("semantic_distill", {})
     trainer.test(split="test")
     result = {
         "method": args.method, "dataset": args.dataset, "shots": args.shots,
         "seed": args.seed, "selected_epoch": selection["epoch"],
         "insert_layer": args.insert_layer,
-        "semantic_weight": cfg.TRAINER.SEMANTIC_DISTILL.WEIGHT,
-        "semantic_temperature": cfg.TRAINER.SEMANTIC_DISTILL.TEMPERATURE,
+        "semantic_enabled": semantic.get("ENABLED"),
+        "semantic_metadata_source": "checkpoint" if semantic else "unavailable",
+        "semantic_weight": semantic.get("WEIGHT"),
+        "semantic_temperature": semantic.get("TEMPERATURE"),
         "validation_accuracy": selection["selection_value"],
         "test_accuracy": float(trainer.last_eval_results["accuracy"]),
         "test_metrics": {key: float(value) for key, value in trainer.last_eval_results.items()},
