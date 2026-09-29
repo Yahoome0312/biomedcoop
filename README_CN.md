@@ -141,3 +141,29 @@ OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 PYTHONPATH=. python -m scripts.run_semantic_
 `scripts/validate_semantic_distill.py` 保留真实三数据集一步训练、梯度隔离、关闭开关输出精确比较及checkpoint保存/加载验证；小模型回归测试验证固定λ/τ损失公式及semantic/CE梯度。网格搜索、pilot接续和GPU交接脚本已移除。
 
 历史网格324组结果保留在 `output/text_guided_visual_semantic_distill_grid_seed123`。本次选择固定λ=0.1、τ=0.5，12-setting等权test为74.5975%，比Original74.1650%提升0.4325pp，8升/0平/4降，最大单setting下降0.8313pp。三个数据集各自四个shot的等权平均均提升：DermaMNIST+0.5528pp、Kvasir+0.3125pp、CHMNIST+0.4322pp。该选择以三个数据集平均均不下降为依据，仍有单setting下降。选定36组历史checkpoint和曲线位于 `output/text_guided_visual_semantic_distill_grid_seed123/lambda_0.1_tau_0.5`，完整历史统计见all_results_report.md、all_results_detailed.csv、all_settings_summary.csv。
+
+## Class-conditioned Visual Prompt（CVP）
+
+CVP 是独立的视觉类别条件实验，`TRAINER.CVP.ENABLED` 默认 False，与 Semantic Distill 同时开启会报错。现有普通视觉 forward、Original TKE 和 Semantic KL 分支保持不变。新增 `ClassConditionedVisualPrompt` 复用文本编码器的冻结 Mean-50 `class_prior b_c∈R^512`，输入 detach，计算 `P_c^V=g_v(b_c)∈R^(4×768)`；Image MLP 为 Linear(512,128)→QuickGELU→Linear(128,3072)，共有461,952个新参数，不新增 Text MLP。
+
+`TimmViTVisualPromptEncoder.forward_with_class_prompt(image, class_prompt_tokens, insert_layer=7, fusion_weight=0.5)` 接收 `[B,3,H,W]` 与 `[B,4,768]`。代码block0–6继续原 Visual Deep Prompt；block7（论文/图中第8个Block）执行前计算 `Q_c^V=0.5·P_7^V+0.5·g_v(b_c)`，用融合结果替换4个prompt slots。其中 `P_7^V` 是原Visual Deep Prompt在layer7的可训练参数，不是layer6输出的隐藏状态；`b_c` 是与文本MLP共享的冻结Mean-50类别prior。block8–11不再次覆盖，最后删除slots并沿用原pooling/projection。普通Visual Deep Prompt的layer0–7均接收梯度，layer8–11的参数切片梯度为零。文本端同样为 `Q_c^T=0.5·P_7^T+0.5·g_t(b_c)`；两端MLP各自独立。
+
+`CVPCustomCLIP` 训练、验证和测试均遍历所有候选类别，输出 `v:[B,C,512]`；文本端仍用现有Original TKE得到 `t:[C,512]`。`z_ic=exp(s)·normalize(v_ic)^T normalize(t_c)`，以 `einsum("bcd,cd->bc")` 得到 `[B,C]`，GT仅用于 `cross_entropy(z,y)`，不添加任何额外loss。CoOp context、Visual/Text Deep Prompt、Original TKE和Image MLP共同训练；backbone、description bank、class prior和logit_scale冻结。
+
+默认配置为 `CVP.ENABLED=False, INSERT_LAYER=7, NUM_TOKENS=4, BOTTLENECK_DIM=128, FUSION_WEIGHT=0.5`。文本TCP与视觉CVP的配置、模块构造和CVP运行/评估入口默认fusion均为0.5；显式传入1.0仍支持历史直接替换。当前独立训练/测试入口显式设置CVP/TCP开启、Semantic关闭、两端layer7、两端 `FUSION_WEIGHT=0.5`。checkpoint仅开启时含 `cvp.*` 参数；独立 `cvp_enabled/cvp_insert_layer/cvp_num_tokens/cvp_bottleneck_dim/cvp_fusion_weight` 元数据用于拒绝CVP/non-CVP及视觉融合权重错配。历史无CVP元数据的checkpoint按non-CVP加载；历史CVP checkpoint缺少 `cvp_fusion_weight` 时按1.0处理，不能加载到当前0.5融合实验。
+
+运行 `PYTHONPATH=. HF_HUB_OFFLINE=1 CUDA_VISIBLE_DEVICES=1 /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop/bin/python -m scripts.validate_cvp`，依次检查三数据集真实小batch梯度、特征形状、labels独立性、checkpoint往返及正式batch32单步显存和耗时。验证完成后运行 `PYTHONPATH=. /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop/bin/python -m scripts.run_cvp`。
+
+正式队列GPU1/2/6/7每卡最多两个独立任务（8个槽位），默认 `--jobs-per-gpu=1`，可显式设为2，DermaMNIST/Kvasir/CHMNIST × shots4/8/16/32 × seeds1/2/3共36组，沿用100epoch、batch32与原优化器/数据设置。输出 `output/class_conditioned_visual_prompt_text0p5_visual0p5_seed123`；按validation accuracy选模后独立test，对照 `output/class_text_token_fusion_0p5_layers6_11_seed123/layer_7`。逐组CSV保留实际checkpoint的CVP/fusion设置；队列对同卡任务按真实batch32峰值显存加2GiB余量逐个预留，并扣除其他用户的显存占用，不足时每15min检查一次，不干扰其他任务。完成后读取实际best checkpoint核对epoch和配置。汇总均值±样本std、12-setting等权平均、Δ和win/tie/loss。显存不足时不自动改变batch或精度，停止正式启动并报告实测情况。
+
+历史视觉直接替换版本在2026-09-29通过真实BiomedCLIP验证：三数据集均完成batch2前向/反向、全部训练分支梯度检查、labels独立性、checkpoint往返和正式batch32单步；总训练参数988416。DermaMNIST/Kvasir/CHMNIST的batch32峰值分别17836.01/20251.29/20250.50MiB，单步分别0.624/0.715/0.708s。完整记录在 `output/class_conditioned_visual_prompt_fusion0p5_validation/validation_summary.json`。该版正式实验已按用户指令终止，结果目录 `output/class_conditioned_visual_prompt_fusion0p5_seed123` 已删除；上述验证数值仅对应历史直接替换版本。当前双端融合验证记录使用 `output/class_conditioned_visual_prompt_text0p5_visual0p5_validation/validation_summary.json`；正式管理日志为新实验输出目录的 `_manager/manager.log`，最终结果以 `comparison_report.md` 与 `_manager/final_validation.json` 为准。
+
+支持 `--adopt-manager <PID>` 无重启交接：暂停指定旧CVP manager派发，读取其直接训练/测试子进程，通过pidfd等待各进程自然结束；原任务在原GPU槽位接续测试，待办队列排除活动case和已完成结果。所有接手进程结束后清理旧manager，新队列最后自动核对36份实际checkpoint。交接记录保存 `_manager/handoff.json`。
+
+历史直接替换实验的单槽和双槽manager均已终止。当前双端0.5融合使用新队列、新结果目录，命令 `python -m scripts.run_cvp --jobs-per-gpu 2`，固定GPU1/2/6/7共8槽。
+
+2026-09-29双端0.5融合版本：项目回归69 passed/1 skipped，真实BiomedCLIP三数据集检查全部通过（参数总量988416）。batch32峰值显存/单步耗时：DermaMNIST 17836.15MiB/0.647s；Kvasir 20251.43MiB/0.721s；CHMNIST 20250.64MiB/0.718s。新队列tmux `cvp-text0p5-visual0p5-two`，GPU1/2/6/7每卡双槽，日志 `output/class_conditioned_visual_prompt_text0p5_visual0p5_seed123/_manager/manager.log`。
+
+当前调度（用户最新设置）：GPU1/2/6/7每卡1程序、共4槽，运行 `python -m scripts.run_cvp --jobs-per-gpu 1`。tmux `cvp-text0p5-visual0p5-one`，日志 `_manager/single_jobs_manager.log`，切换记录 `_manager/single_slot_transition.json`；两端layer7/fusion0.5及其余实验参数保持原设置。此前双槽manager已暂停派发，保留的4个训练由新单槽队列接续，其余任务排队。
+
+CVP双端融合36组seed1/2/3实验全部完成，真实checkpoint选模和配置核对通过。12-setting等权平均CVP75.43%、文本fusion0.5 layer7 baseline75.61%，差值−0.18pp，win/tie/loss=7/0/5。五个下降setting的seed4/5补充共10组完成，其补跑代码按用户要求撤回；结果和用户指定五选三报告保留于 `output/class_conditioned_visual_prompt_text0p5_visual0p5_seed45`，原固定三seed结果保留于 `output/class_conditioned_visual_prompt_text0p5_visual0p5_seed123`。五选三与固定三seed统计口径分开记录。

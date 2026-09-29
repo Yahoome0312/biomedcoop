@@ -34,7 +34,7 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def run_case(gpu, case, insert_layer=7, output_dir=None):
+def run_case(gpu, case, insert_layer=7, output_dir=None, cvp_fusion_weight=0.5):
     method, dataset, shots, seed = case
     dest = Path(output_dir) if output_dir is not None else run_dir(case)
     if (dest / "test_metrics.json").exists():
@@ -47,10 +47,14 @@ def run_case(gpu, case, insert_layer=7, output_dir=None):
     opts = ["DATASET.NUM_SHOTS", str(shots), "TEST.SKIP_FINAL_TEST", "True",
             "TEST.SAVE_BEST_METRICS", "['accuracy']", "TRAINER.TCP.INSERT_LAYER", str(insert_layer)]
     if not is_coop:
-        opts += ["TRAINER.TCP.ENABLED", str(method in ("class_text_token", "fusion", "semantic_distill")),
+        opts += ["TRAINER.TCP.ENABLED", str(method in ("class_text_token", "fusion", "semantic_distill", "cvp")),
                  "TRAINER.TCP.FUSION_WEIGHT",
-                 "0.5" if method == "fusion" else "1.0"]
+                 "0.5" if method in ("fusion", "semantic_distill", "cvp") else "1.0"]
     opts += ["TRAINER.SEMANTIC_DISTILL.ENABLED", str(method == "semantic_distill")]
+    if method == "cvp":
+        opts += ["TRAINER.CVP.ENABLED", "True", "TRAINER.CVP.INSERT_LAYER", "7",
+                 "TRAINER.CVP.NUM_TOKENS", "4", "TRAINER.CVP.BOTTLENECK_DIM", "128",
+                 "TRAINER.CVP.FUSION_WEIGHT", str(cvp_fusion_weight)]
     checkpoint_dir = "prompt_learner" if is_coop else "prompt_parameters"
     if not (dest / checkpoint_dir / "model.pth.tar-100").exists():
         command = [PYTHON, "-u", str(ROOT / "train.py"), "--root", str(ROOT / "data"),
@@ -68,6 +72,8 @@ def run_case(gpu, case, insert_layer=7, output_dir=None):
     command = [PYTHON, "-u", str(ROOT / "scripts/evaluate_three_methods.py"),
                "--run-dir", str(dest), "--method", method, "--dataset", dataset,
                "--shots", str(shots), "--seed", str(seed), "--insert-layer", str(insert_layer)]
+    if method == "cvp":
+        command += ["--cvp-fusion-weight", str(cvp_fusion_weight)]
     with (dest / "test.stdout.log").open("a") as log:
         code = subprocess.run(command, cwd=ROOT, env=env, stdout=log,
                               stderr=subprocess.STDOUT).returncode

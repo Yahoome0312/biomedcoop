@@ -20,6 +20,7 @@ from dassl.utils import load_checkpoint
 from dassl.utils.torchtools import resume_from_checkpoint, save_checkpoint
 
 from models.biomedclip_loader import load_biomedclip
+from models.class_conditioned_visual_prompt import ClassConditionedVisualPrompt
 from models.original_style_tcp import (
     OriginalStyleTCPBertTextEncoder,
     build_frozen_description_bank,
@@ -52,14 +53,45 @@ def _parameter_fingerprint(named_parameters):
     return digest.hexdigest(), entries
 
 
+class CVPCustomCLIP(CustomCLIP):
+    """All-class visual conditioning; labels are used only by the CE loss."""
+
+    def __init__(self, cfg, classnames, biomedclip_model):
+        super().__init__(cfg, classnames, biomedclip_model)
+        self.cvp_insert_layer = int(cfg.TRAINER.CVP.INSERT_LAYER)
+        self.cvp_fusion_weight = float(cfg.TRAINER.CVP.FUSION_WEIGHT)
+
+    def forward(self, image, return_text_features=False, return_features=False):
+        tokens = self.cvp(self.text_encoder.class_prior)
+        image = image.type(self.dtype)
+        image_features = torch.stack([
+            self.image_encoder.forward_with_class_prompt(
+                image, prompt.unsqueeze(0).expand(image.shape[0], -1, -1),
+                insert_layer=self.cvp_insert_layer,
+                fusion_weight=self.cvp_fusion_weight,
+            ) for prompt in tokens
+        ], dim=1)
+        text_features = self.text_encoder(self.prompt_learner(), self.tokenized_prompts)
+        image_norm = F.normalize(image_features, dim=-1)
+        text_norm = F.normalize(text_features, dim=-1)
+        logits = self.logit_scale.exp() * torch.einsum("bcd,cd->bc", image_norm, text_norm)
+        if return_features:
+            return logits, text_norm, image_norm
+        if return_text_features:
+            return logits, text_norm
+        return logits
+
+
 class PromptParameterBundle(nn.Module):
     """Checkpoint the prompt adapters enabled for the current TCP run."""
 
-    def __init__(self, prompt_learner, visual_prompt, tcp):
+    def __init__(self, prompt_learner, visual_prompt, tcp, cvp=None):
         super().__init__()
         self.prompt_learner = prompt_learner
         self.visual_prompt = visual_prompt
         self.tcp = tcp
+        if cvp is not None:
+            self.cvp = cvp
 
 
 @TRAINER_REGISTRY.register()
@@ -68,6 +100,19 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
     def check_cfg(self, cfg):
         trainer_cfg = cfg.TRAINER.COOPVPT
+        cvp = cfg.TRAINER.CVP
+        if cvp.ENABLED and cfg.TRAINER.SEMANTIC_DISTILL.ENABLED:
+            raise ValueError("CVP and Semantic Distill are independent experiments; "
+                             "combined mode is not implemented.")
+        if cvp.ENABLED:
+            if not 0 <= float(cvp.FUSION_WEIGHT) <= 1:
+                raise ValueError("CVP FUSION_WEIGHT must be in [0, 1]")
+            if not cfg.TRAINER.TCP.ENABLED:
+                raise ValueError("CVP requires Original TKE (TCP.ENABLED=True)")
+            if int(cvp.NUM_TOKENS) != 4 or int(trainer_cfg.VPT_N_CTX) != int(cvp.NUM_TOKENS):
+                raise ValueError("CVP requires four matching visual prompt slots")
+            if not 1 <= int(cvp.INSERT_LAYER) < 12 or int(cvp.BOTTLENECK_DIM) < 1:
+                raise ValueError("Invalid CVP insertion layer or bottleneck dimension")
         if cfg.TRAINER.SEMANTIC_DISTILL.GRAD_NORM_INTERVAL < 0:
             raise ValueError("Semantic gradient norm interval must be nonnegative")
         if cfg.TRAINER.SEMANTIC_DISTILL.TEMPERATURE <= 0 or cfg.TRAINER.SEMANTIC_DISTILL.WEIGHT < 0:
@@ -98,7 +143,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         if trainer_cfg.PREC in {"fp32", "amp"}:
             biomedclip_model.float()
 
-        self.model = CustomCLIP(cfg, classnames, biomedclip_model.eval())
+        model_class = CVPCustomCLIP if cfg.TRAINER.CVP.ENABLED else CustomCLIP
+        self.model = model_class(cfg, classnames, biomedclip_model.eval())
         self._gradient_audit_complete = False
         self.protocol = PROTOCOL
         self._semantic_audit_complete = False
@@ -124,6 +170,13 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             fusion_weight=tcp.FUSION_WEIGHT,
         )
         tcp_prompt = self.model.text_encoder.tcp_prompt
+        if cfg.TRAINER.CVP.ENABLED:
+            self.model.cvp = ClassConditionedVisualPrompt(
+                prior_dim=self.model.text_encoder.class_prior.shape[-1],
+                hidden_dim=self.model.image_encoder.visual_prompt.embed_dim,
+                num_tokens=cfg.TRAINER.CVP.NUM_TOKENS,
+                bottleneck_dim=cfg.TRAINER.CVP.BOTTLENECK_DIM,
+            )
 
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)
@@ -136,6 +189,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             for name, parameter in tcp_prompt.named_parameters():
                 if not name.startswith("text_prompt."):
                     parameter.requires_grad_(True)
+        if cfg.TRAINER.CVP.ENABLED:
+            self.model.cvp.requires_grad_(True)
         if cfg.MODEL.INIT_WEIGHTS:
             raise ValueError("MODEL.INIT_WEIGHTS is forbidden in from-scratch runs")
 
@@ -154,11 +209,14 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             tcp_prompt,
         ):
             module.train()
+        if cfg.TRAINER.CVP.ENABLED:
+            self.model.cvp.train()
 
         self.prompt_parameters = PromptParameterBundle(
             self.model.prompt_learner,
             visual_prompt=self.model.image_encoder.visual_prompt,
             tcp=tcp_prompt,
+            cvp=getattr(self.model, "cvp", None),
         )
 
         trainable_parameters = [
@@ -182,6 +240,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "core_initialization_fingerprint": base_fingerprint,
             "core_parameters": base_entries,
             "parameter_counts": self._parameter_count_manifest(),
+            **self._cvp_checkpoint_metadata(),
         }
         _json_write(Path(cfg.OUTPUT_DIR) / "initialization_manifest.json", manifest)
         if torch.cuda.device_count() > 1:
@@ -190,6 +249,24 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
     def _unwrapped_model(self):
         return self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+
+    def _cvp_checkpoint_metadata(self):
+        cvp = self.cfg.TRAINER.CVP
+        return dict(cvp_enabled=bool(cvp.ENABLED), cvp_insert_layer=int(cvp.INSERT_LAYER),
+                    cvp_num_tokens=int(cvp.NUM_TOKENS), cvp_bottleneck_dim=int(cvp.BOTTLENECK_DIM),
+                    cvp_fusion_weight=float(cvp.FUSION_WEIGHT))
+
+    def _validate_cvp_checkpoint(self, checkpoint):
+        expected = self._cvp_checkpoint_metadata()
+        saved_enabled = bool(checkpoint.get("cvp_enabled", False))
+        has_keys = any(key.startswith("cvp.") for key in checkpoint["state_dict"])
+        if saved_enabled != has_keys or saved_enabled != expected["cvp_enabled"]:
+            raise RuntimeError("Checkpoint CVP mode does not match current run or state keys")
+        if saved_enabled:
+            for field, value in expected.items():
+                saved = checkpoint.get(field, 1.0) if field == "cvp_fusion_weight" else checkpoint.get(field)
+                if saved != value:
+                    raise RuntimeError("Checkpoint {} does not match current run".format(field))
 
     def _parameter_count_manifest(self):
         model = self._unwrapped_model()
@@ -203,6 +280,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 if not name.startswith("text_prompt.") and parameter.requires_grad
             ],
         }
+        if hasattr(model, "cvp"):
+            groups["cvp"] = list(model.cvp.parameters())
         counts = {
             name: sum(parameter.numel() for parameter in parameters)
             for name, parameters in groups.items()
@@ -235,6 +314,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for name, _ in self.model.text_encoder.tcp_prompt.named_parameters()
                 if not name.startswith("text_prompt.")
             )
+        if hasattr(self.model, "cvp"):
+            expected.update("cvp." + name for name, _ in self.model.cvp.named_parameters())
         if set(trainable) != expected:
             raise RuntimeError(
                 "Unexpected trainable parameters: expected {}, got {}".format(
@@ -258,6 +339,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             model.image_encoder.visual_prompt,
             model.text_encoder.tcp_prompt,
         ]
+        if hasattr(model, "cvp"):
+            modules.append(model.cvp)
         if mode == "train":
             for module in modules:
                 module.train()
@@ -370,6 +453,8 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for name, parameter in model.text_encoder.tcp_prompt.named_parameters()
                 if not name.startswith("text_prompt.")
             ]
+        if hasattr(model, "cvp"):
+            branches["CVP"] = list(model.cvp.parameters())
         norms = {}
         for name, parameters in branches.items():
             norm = sum(
@@ -377,7 +462,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 for parameter in parameters
                 if parameter.grad is not None
             )
-            if norm <= 0:
+            if norm <= 0 or not torch.isfinite(torch.tensor(norm)):
                 raise RuntimeError("Gradient audit failed for {}".format(name))
             norms[name] = norm
         frozen_with_grad = [
@@ -431,6 +516,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "tcp_enabled": self.tcp_enabled,
             "protocol": self.protocol,
             "fusion_weight": float(self.cfg.TRAINER.TCP.FUSION_WEIGHT),
+            **self._cvp_checkpoint_metadata(),
         }
         save_checkpoint(
             state,
@@ -463,6 +549,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         return start_epoch
 
     def _validate_checkpoint_metadata(self, checkpoint):
+        self._validate_cvp_checkpoint(checkpoint)
         if checkpoint.get("protocol") != self.protocol:
             raise RuntimeError("Checkpoint training protocol does not match current run")
         if bool(checkpoint.get("tcp_enabled", True)) != self.tcp_enabled:

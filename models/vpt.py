@@ -124,6 +124,36 @@ class TimmViTVisualPromptEncoder(nn.Module):
             return checkpoint(block, x, use_reentrant=False)
         return block(x)
 
+    def forward_with_class_prompt(self, image, class_prompt_tokens, insert_layer=7, fusion_weight=0.5):
+        """Replace prompt slots before the selected block and propagate them."""
+        trunk = self.trunk
+        if not 0 <= fusion_weight <= 1:
+            raise ValueError("CVP fusion weight must be in [0, 1]")
+        if not 0 <= insert_layer < len(trunk.blocks):
+            raise ValueError("CVP INSERT_LAYER is outside the visual transformer")
+        expected = (image.shape[0], self.num_prompt_tokens, self.visual_prompt.embed_dim)
+        if tuple(class_prompt_tokens.shape) != expected:
+            raise ValueError("CVP tokens must have shape {}, got {}".format(
+                expected, tuple(class_prompt_tokens.shape)))
+        x = trunk.norm_pre(trunk.patch_drop(trunk._pos_embed(trunk.patch_embed(image))))
+        x = self._insert_prompt(x, 0)
+        for layer_idx, block in enumerate(trunk.blocks):
+            if layer_idx == insert_layer:
+                prompt = class_prompt_tokens.to(device=x.device, dtype=x.dtype)
+                if fusion_weight < 1.0:
+                    ordinary = self.visual_prompt.for_layer(layer_idx, x.shape[0], x.dtype, x.device)
+                    prompt = (1.0 - fusion_weight) * ordinary + fusion_weight * prompt
+                x = torch.cat((
+                    x[:, : self.num_prefix_tokens],
+                    prompt,
+                    x[:, self.num_prefix_tokens + self.num_prompt_tokens :],
+                ), dim=1)
+            elif self.mode == "deep" and 0 < layer_idx < insert_layer:
+                x = self._replace_prompt(x, layer_idx)
+            x = self._run_block(trunk, block, x)
+        x = trunk.norm(self._remove_prompt(x))
+        return self.head(trunk.forward_head(x))
+
     def forward(self, image, return_tokens=False):
         trunk = self.trunk
         x = trunk.patch_embed(image)

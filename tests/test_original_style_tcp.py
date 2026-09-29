@@ -42,7 +42,7 @@ def _original_encoder(num_hidden_layers=12):
     tower.requires_grad_(False)
     bank = F.normalize(torch.randn(3, 50, 16), dim=-1).requires_grad_()
     encoder = OriginalStyleTCPBertTextEncoder(
-        tower, bank, ["a", "b", "c"], insert_layer=8
+        tower, bank, ["a", "b", "c"], insert_layer=8, fusion_weight=1.0
     ).eval()
     ids = torch.zeros(3, 16, dtype=torch.long)
     ids[:, :8] = torch.tensor([2, 10, 11, 12, 13, 20, 3, 21])
@@ -56,7 +56,8 @@ def test_mean50_order_independence_and_shared_tke():
     torch.testing.assert_close(encoder.class_prior, F.normalize(bank.mean(1), dim=-1))
     shuffled = bank.detach()[:, torch.randperm(50)]
     other = OriginalStyleTCPBertTextEncoder(
-        copy.deepcopy(encoder.base_text_encoder), shuffled, ["a", "b", "c"], insert_layer=8
+        copy.deepcopy(encoder.base_text_encoder), shuffled, ["a", "b", "c"], insert_layer=8,
+        fusion_weight=1.0,
     )
     other.tcp_prompt.load_state_dict(encoder.tcp_prompt.state_dict())
     torch.testing.assert_close(other.class_prior, encoder.class_prior)
@@ -142,7 +143,7 @@ def test_insert_layer_blends_original_prompt_and_class_tokens(insert_layer):
 
 
 def test_parameter_count_and_checkpoint_metadata():
-    prompt = OriginalStyleTCPPromptParameters(512, 768, 12, insert_layer=8)
+    prompt = OriginalStyleTCPPromptParameters(512, 768, 12, insert_layer=8, fusion_weight=1.0)
     assert sum(
         parameter.numel()
         for name, parameter in prompt.named_parameters()
@@ -165,6 +166,10 @@ def test_tcp_config_has_no_implementation_mode():
 
     cfg = get_cfg_default()
     extend_cfg(cfg)
+    assert cfg.TRAINER.TCP.FUSION_WEIGHT == cfg.TRAINER.CVP.FUSION_WEIGHT == .5
+    prompt = OriginalStyleTCPPromptParameters(512, 768, 12, insert_layer=8)
+    assert prompt.fusion_weight == .5
+    assert prompt.text_prompt.prompt_embeddings.shape[0] == 9
     assert "MODE" not in cfg.TRAINER.TCP
     assert "CONFUSION_AWARE" not in cfg.TRAINER
     assert "EXPERT_MOE" not in cfg.TRAINER
