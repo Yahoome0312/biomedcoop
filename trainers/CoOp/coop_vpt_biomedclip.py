@@ -101,9 +101,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
     def check_cfg(self, cfg):
         trainer_cfg = cfg.TRAINER.COOPVPT
         cvp = cfg.TRAINER.CVP
-        if cvp.ENABLED and cfg.TRAINER.SEMANTIC_DISTILL.ENABLED:
-            raise ValueError("CVP and Semantic Distill are independent experiments; "
-                             "combined mode is not implemented.")
         if cvp.ENABLED:
             if not 0 <= float(cvp.FUSION_WEIGHT) <= 1:
                 raise ValueError("CVP FUSION_WEIGHT must be in [0, 1]")
@@ -113,10 +110,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
                 raise ValueError("CVP requires four matching visual prompt slots")
             if not 1 <= int(cvp.INSERT_LAYER) < 12 or int(cvp.BOTTLENECK_DIM) < 1:
                 raise ValueError("Invalid CVP insertion layer or bottleneck dimension")
-        if cfg.TRAINER.SEMANTIC_DISTILL.GRAD_NORM_INTERVAL < 0:
-            raise ValueError("Semantic gradient norm interval must be nonnegative")
-        if cfg.TRAINER.SEMANTIC_DISTILL.TEMPERATURE <= 0 or cfg.TRAINER.SEMANTIC_DISTILL.WEIGHT < 0:
-            raise ValueError("Semantic temperature must be positive and weight nonnegative")
         if trainer_cfg.PREC not in {"fp16", "fp32", "amp"}:
             raise ValueError("COOPVPT.PREC must be fp16, fp32 or amp")
         if cfg.OPTIM.NAME.lower() != "adamw":
@@ -147,8 +140,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         self.model = model_class(cfg, classnames, biomedclip_model.eval())
         self._gradient_audit_complete = False
         self.protocol = PROTOCOL
-        self._semantic_audit_complete = False
-        self._semantic_step = 0
 
         tcp = cfg.TRAINER.TCP
         self.tcp_enabled = bool(tcp.ENABLED)
@@ -232,7 +223,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
 
         manifest = {
             "protocol": self.protocol,
-            "semantic_distill": dict(self.cfg.TRAINER.SEMANTIC_DISTILL),
             "tcp_enabled": self.tcp_enabled,
             "seed": int(cfg.SEED),
             "shots": int(cfg.DATASET.NUM_SHOTS),
@@ -378,11 +368,7 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             self._audit_gradients_once()
             self.optim.step()
 
-        if "semantic_grad_norm" in losses:
-            self.write_scalar("train/semantic_grad_norm", losses["semantic_grad_norm"].item(),
-                              self.epoch * self.num_batches + self.batch_idx)
-        summary = {name: value.item() for name, value in losses.items()
-                   if name != "semantic_grad_norm"}
+        summary = {name: value.item() for name, value in losses.items()}
         summary.update(
             acc=compute_accuracy(output, label)[0].item(),
             lr=self.optim.param_groups[0]["lr"],
@@ -392,51 +378,9 @@ class CoOpVPT_BiomedCLIP(TrainerX):
         return summary
 
     def _compute_training_loss(self, image, label):
-        if not self.cfg.TRAINER.SEMANTIC_DISTILL.ENABLED:
-            output = self.model(image)
-            loss_ce = F.cross_entropy(output, label)
-            return output, {"loss": loss_ce, "loss_ce": loss_ce}
-        output, text_norm, image_norm = self.model(image, return_features=True)
-        temperature = self.cfg.TRAINER.SEMANTIC_DISTILL.TEMPERATURE
-        student_text = text_norm.detach().float()
-        text_relation = student_text @ student_text.t()
-        teacher_logits = text_relation[label]
-        teacher_prob = F.softmax(teacher_logits / temperature, dim=-1).detach()
-        student_logits = image_norm.float() @ student_text.t()
-        loss_sem = F.kl_div(F.log_softmax(student_logits / temperature, dim=-1),
-                            teacher_prob, reduction="batchmean")
+        output = self.model(image)
         loss_ce = F.cross_entropy(output, label)
-        interval = self.cfg.TRAINER.SEMANTIC_DISTILL.GRAD_NORM_INTERVAL
-        record_gradient = not self._semantic_audit_complete or (
-            interval > 0 and self._semantic_step % interval == 0
-        )
-        grad_norm = None
-        if record_gradient:
-            model = self._unwrapped_model()
-            visual_parameters = list(model.image_encoder.visual_prompt.parameters())
-            semantic_grads = torch.autograd.grad(loss_sem, visual_parameters, retain_graph=True)
-            grad_norm = torch.stack([g.detach().float().square().sum()
-                                     for g in semantic_grads]).sum().sqrt()
-        self._semantic_step += 1
-        if not self._semantic_audit_complete:
-            loss_sem.backward(retain_graph=True)
-            forbidden = [name for name, p in model.named_parameters()
-                         if not name.startswith("image_encoder.visual_prompt.") and p.grad is not None]
-            if forbidden or not torch.isfinite(grad_norm) or grad_norm <= 0:
-                raise RuntimeError(f"Semantic gradient audit failed: {forbidden}, norm={grad_norm}")
-            self.model_zero_grad()
-            audit = dict(image_features=list(image_norm.shape), text_features=list(text_norm.shape),
-                         text_relation=list(text_relation.shape), teacher_logits=list(teacher_logits.shape),
-                         student_logits=list(student_logits.shape), logits=list(output.shape),
-                         visual_semantic_gradient_norm=float(grad_norm), forbidden_gradients=forbidden)
-            _json_write(Path(self.cfg.OUTPUT_DIR) / "semantic_gradient_audit.json", audit)
-            print(f"Semantic gradient audit passed: {audit}")
-            self._semantic_audit_complete = True
-        total = loss_ce + self.cfg.TRAINER.SEMANTIC_DISTILL.WEIGHT * loss_sem
-        losses = {"loss": total, "total_loss": total, "loss_ce": loss_ce, "loss_sem": loss_sem}
-        if grad_norm is not None:
-            losses["semantic_grad_norm"] = grad_norm
-        return output, losses
+        return output, {"loss": loss_ce, "loss_ce": loss_ce}
 
     def _audit_gradients_once(self):
         if self._gradient_audit_complete:
@@ -512,7 +456,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             "optimizer": self.optim.state_dict(),
             "scheduler": self.sched.state_dict() if self.sched is not None else None,
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
-            "semantic_distill": dict(self.cfg.TRAINER.SEMANTIC_DISTILL),
             "tcp_enabled": self.tcp_enabled,
             "protocol": self.protocol,
             "fusion_weight": float(self.cfg.TRAINER.TCP.FUSION_WEIGHT),
@@ -535,12 +478,6 @@ class CoOpVPT_BiomedCLIP(TrainerX):
             checkpoint_name = stream.readline().strip()
         checkpoint = load_checkpoint(osp.join(prompt_dir, checkpoint_name))
         self._validate_checkpoint_metadata(checkpoint)
-        saved_semantic = checkpoint.get("semantic_distill", {"ENABLED": False})
-        current_semantic = dict(self.cfg.TRAINER.SEMANTIC_DISTILL)
-        if bool(saved_semantic["ENABLED"]) != bool(current_semantic["ENABLED"]) or (current_semantic["ENABLED"] and any(
-                saved_semantic.get(key) != current_semantic[key]
-                for key in ("WEIGHT", "TEMPERATURE"))):
-            raise RuntimeError("Resume semantic-distillation configuration does not match checkpoint")
         start_epoch = resume_from_checkpoint(
             prompt_dir, self.prompt_parameters, self.optim, self.sched
         )

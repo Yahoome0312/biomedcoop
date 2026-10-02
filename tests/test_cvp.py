@@ -142,14 +142,12 @@ def test_disabled_original_forward_is_exactly_unchanged():
         torch.testing.assert_close(network(image), before, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize('failure', ['semantic', 'tcp', 'slots', 'layer', 'bottleneck'])
+@pytest.mark.parametrize('failure', ['tcp', 'slots', 'layer', 'bottleneck'])
 def test_invalid_config(failure):
     cfg = _tcp_cfg()
     cfg.TRAINER.CVP.ENABLED = True
     cfg.TRAINER.COOPVPT.VPT_N_CTX = 4
-    if failure == 'semantic':
-        cfg.TRAINER.SEMANTIC_DISTILL.ENABLED = True
-    elif failure == 'tcp':
+    if failure == 'tcp':
         cfg.TRAINER.TCP.ENABLED = False
     elif failure == 'slots':
         cfg.TRAINER.COOPVPT.VPT_N_CTX = 5
@@ -189,7 +187,7 @@ def test_optional_bundle_and_checkpoint_compatibility(tmp_path):
         trainer._validate_cvp_checkpoint({'state_dict': bundle.state_dict()})
 
 
-def test_training_entry_sets_cvp_flags_and_keeps_semantic_off(tmp_path, monkeypatch):
+def test_training_entry_sets_cvp_flags(tmp_path, monkeypatch):
     from scripts import run_three_methods as runner
     calls = []
     def run(command, **kwargs):
@@ -202,7 +200,7 @@ def test_training_entry_sets_cvp_flags_and_keeps_semantic_off(tmp_path, monkeypa
         'TRAINER.CVP.NUM_TOKENS': '4', 'TRAINER.CVP.BOTTLENECK_DIM': '128',
         'TRAINER.CVP.FUSION_WEIGHT': '0.5',
         'TRAINER.TCP.ENABLED': 'True', 'TRAINER.TCP.INSERT_LAYER': '7',
-        'TRAINER.TCP.FUSION_WEIGHT': '0.5', 'TRAINER.SEMANTIC_DISTILL.ENABLED': 'False'}.items():
+        'TRAINER.TCP.FUSION_WEIGHT': '0.5'}.items():
         assert command[command.index(key) + 1] == expected
     assert calls[1][calls[1].index('--method') + 1] == 'cvp'
     assert calls[1][calls[1].index('--cvp-fusion-weight') + 1] == '0.5'
@@ -214,7 +212,7 @@ def test_eval_cvp_configuration_and_checkpoint_metadata(tmp_path, monkeypatch):
     from scripts import evaluate_three_methods as evaluation
     (tmp_path / 'best_validation_accuracy.json').write_text(json.dumps({'epoch': 8, 'selection_value': 60.}))
     metadata = dict(cvp_enabled=True, cvp_insert_layer=7, cvp_num_tokens=4, cvp_bottleneck_dim=128, cvp_fusion_weight=.5)
-    checkpoint = dict(fusion_weight=.5, semantic_distill={'ENABLED': False}, **metadata)
+    checkpoint = dict(fusion_weight=.5, **metadata)
     captured = []
     trainer = SimpleNamespace(load_model=lambda path: checkpoint, test=lambda split: None,
                               last_eval_results={'accuracy': 61.})
@@ -225,7 +223,6 @@ def test_eval_cvp_configuration_and_checkpoint_metadata(tmp_path, monkeypatch):
     evaluation.main()
     cfg = captured[0]
     assert cfg.TRAINER.CVP.ENABLED and cfg.TRAINER.TCP.ENABLED
-    assert not cfg.TRAINER.SEMANTIC_DISTILL.ENABLED
     assert cfg.TRAINER.TCP.FUSION_WEIGHT == .5
     assert cfg.TRAINER.CVP.FUSION_WEIGHT == .5
     assert cfg.TRAINER.CVP.INSERT_LAYER == cfg.TRAINER.TCP.INSERT_LAYER == 7
@@ -327,7 +324,7 @@ def test_runner_final_validation_reads_actual_checkpoint_epoch(tmp_path, monkeyp
                 (dest / 'test_metrics.json').write_text(json.dumps(dict(
                     selected_epoch=8, validation_accuracy=60., **metadata)))
                 (dest / 'best_validation_accuracy.json').write_text(json.dumps(dict(epoch=8, selection_value=60.)))
-                torch.save(dict(epoch=8, semantic_distill={'ENABLED': False}, **metadata),
+                torch.save(dict(epoch=8, **metadata),
                            dest / 'prompt_parameters/model-best.pth.tar')
     # Restore shared launcher globals automatically after invoking the CVP main.
     for attr in ('OUT', 'METHODS', 'GPUS', 'CASES', 'summarize', 'run_case'):
@@ -335,7 +332,7 @@ def test_runner_final_validation_reads_actual_checkpoint_epoch(tmp_path, monkeyp
     runner.main(jobs_per_gpu=1)
     assert json.loads((runner.OUT / '_manager/final_validation.json').read_text())['completed'] == 36
     checkpoint = runner.OUT / 'cvp/DermaMNIST/shots_4/seed1/prompt_parameters/model-best.pth.tar'
-    torch.save(dict(epoch=9, semantic_distill={'ENABLED': False}, **metadata), checkpoint)
+    torch.save(dict(epoch=9, **metadata), checkpoint)
     with pytest.raises(RuntimeError, match='saved checkpoint metadata mismatch'):
         runner.main(jobs_per_gpu=1)
 

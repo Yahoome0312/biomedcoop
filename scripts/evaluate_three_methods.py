@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--method", choices=("coop", "deep_prompt", "class_text_token", "fusion", "semantic_distill", "cvp"), required=True)
+    parser.add_argument("--method", choices=("coop", "deep_prompt", "class_text_token", "fusion", "cvp"), required=True)
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--shots", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
@@ -31,10 +31,9 @@ def main():
     opts = ["DATASET.NUM_SHOTS", str(args.shots), "TEST.SKIP_FINAL_TEST", "True",
             "TEST.SAVE_BEST_METRICS", "['accuracy']", "TRAINER.TCP.INSERT_LAYER", str(args.insert_layer)]
     if not is_coop:
-        opts += ["TRAINER.TCP.ENABLED", str(args.method in ("class_text_token", "fusion", "semantic_distill", "cvp")),
+        opts += ["TRAINER.TCP.ENABLED", str(args.method in ("class_text_token", "fusion", "cvp")),
                  "TRAINER.TCP.FUSION_WEIGHT",
-                 "0.5" if args.method in ("fusion", "semantic_distill", "cvp") else "1.0"]
-    opts += ["TRAINER.SEMANTIC_DISTILL.ENABLED", str(args.method == "semantic_distill")]
+                 "0.5" if args.method in ("fusion", "cvp") else "1.0"]
     if args.method == "cvp":
         opts += ["TRAINER.CVP.ENABLED", "True", "TRAINER.CVP.INSERT_LAYER", "7",
                  "TRAINER.CVP.NUM_TOKENS", "4", "TRAINER.CVP.BOTTLENECK_DIM", "128",
@@ -55,17 +54,12 @@ def main():
     set_random_seed(args.seed)
     trainer = build_trainer(cfg)
     checkpoint = trainer.load_model(str(run_dir))
-    semantic = (checkpoint or {}).get("semantic_distill", {})
     trainer.test(split="test")
     result = {
         "method": args.method, "dataset": args.dataset, "shots": args.shots,
         "seed": args.seed, "selected_epoch": selection["epoch"],
         "insert_layer": args.insert_layer,
         "fusion_weight": (checkpoint or {}).get("fusion_weight"),
-        "semantic_enabled": semantic.get("ENABLED"),
-        "semantic_metadata_source": "checkpoint" if semantic else "unavailable",
-        "semantic_weight": semantic.get("WEIGHT"),
-        "semantic_temperature": semantic.get("TEMPERATURE"),
         "validation_accuracy": selection["selection_value"],
         "test_accuracy": float(trainer.last_eval_results["accuracy"]),
         "test_metrics": {key: float(value) for key, value in trainer.last_eval_results.items()},

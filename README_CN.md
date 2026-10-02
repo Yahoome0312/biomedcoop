@@ -119,38 +119,17 @@ python -m pytest tests -q
 
 测试使用小型 BERT 和 ViT，不需要下载真实 BiomedCLIP 权重；真实权重集成测试需要显式设置 `RUN_BIOMEDCLIP_INTEGRATION=1`。
 
-## Text-Guided Visual Semantic Distillation
-
-最终固定参数为 `WEIGHT=0.1`、`TEMPERATURE=0.5`，总损失 `L=CE+0.1 L_sem`。`TRAINER.SEMANTIC_DISTILL.ENABLED` 默认 False，保留 Original CE baseline；固定实验入口显式启用蒸馏。模型结构、文本特征和测试分类前向保持原样，不向视觉 Transformer 插入文本 token。
-
-同次前向得到归一化图像 `v:[B,512]`、类别文本 `t:[C,512]`。训练计算 `R=detach(t) @ detach(t).T:[C,C]`，选 GT 行 `R[y]:[B,C]`，teacher 为 `softmax(R[y]/0.5).detach()`；student 为 `v @ detach(t).T:[B,C]`（不乘 logit_scale）。`L_sem=KL(teacher || softmax(student/0.5))`，使用 batchmean，无温度平方因子。semantic loss 只更新 Visual Deep Prompt；CE 继续更新 Visual/Text Deep Prompt、CoOp 和共享 TKE。冻结 BiomedCLIP backbone 无参数梯度。
-
-默认 `GRAD_NORM_INTERVAL=0`，只在首个训练batch通过 autograd.grad 记录 semantic_grad_norm，并单独 loss_sem.backward 验证所有非视觉提示参数无梯度，清空后正常联合更新；后续batch不为监控额外反传。设为1恢复历史逐batch监控，设为N>1每N步采样（从此次训练/恢复启动首批计数）。loss_ce、loss_sem、total_loss正常记录，semantic_grad_norm仅在实际采样步直接写入TensorBoard，不把旧值重复记成新值；TensorBoard使用epoch×num_batches+batch_idx的全局步数，与loss曲线及续训对齐。semantic_gradient_audit.json仍保存六种张量形状及首次梯度隔离结果。
-
-测试只执行标准归一化 cosine logits，不计算文本关系、teacher、student 或 KL，不需要 GT。checkpoint 保存蒸馏配置，续训仅校验训练核心开关/权重/温度，监控频率不参与兼容性限制；旧checkpoint没有GRAD_NORM_INTERVAL也可恢复。测试仍加载正常prompt bundle。evaluator从实际加载的checkpoint["semantic_distill"]记录semantic_enabled、semantic_weight、semantic_temperature，来源标记checkpoint；旧checkpoint缺少元数据时写null并标记unavailable，绝不以当前evaluation config的默认值冒充训练参数。此修复不改变分类预测。
-
-`scripts/run_semantic_distill.py` 是唯一固定实验队列：DermaMNIST/Kvasir/CHMNIST × 4/8/16/32-shot × seed1/2/3，共36组、12个setting，layer7、FUSION_WEIGHT=1.0、λ=0.1、τ=0.5。使用 GPU0/1/2/6/7，每卡两任务；不使用GPU4。运行命令：
-
-```bash
-conda activate /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop
-OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 PYTHONPATH=. python -m scripts.run_semantic_distill
-```
-
-输出 `output/text_guided_visual_semantic_distill_lambda0p1_tau0p5_seed123`，按 validation accuracy 选 checkpoint 后独立 test。Original 对照复用 `output/class_text_token_replacement_layer7_seed123/class_text_token` 的同配置结果。汇总均值±样本std（ddof=1）、Δ、12-setting等权平均、win/tie/loss、最大下降及损失/梯度CSV/PNG曲线。已有完成结果跳过，未完成训练沿用现有checkpoint续训。
-
-`scripts/validate_semantic_distill.py` 保留真实三数据集一步训练、梯度隔离、关闭开关输出精确比较及checkpoint保存/加载验证；小模型回归测试验证固定λ/τ损失公式及semantic/CE梯度。网格搜索、pilot接续和GPU交接脚本已移除。
-
-历史网格324组结果保留在 `output/text_guided_visual_semantic_distill_grid_seed123`。本次选择固定λ=0.1、τ=0.5，12-setting等权test为74.5975%，比Original74.1650%提升0.4325pp，8升/0平/4降，最大单setting下降0.8313pp。三个数据集各自四个shot的等权平均均提升：DermaMNIST+0.5528pp、Kvasir+0.3125pp、CHMNIST+0.4322pp。该选择以三个数据集平均均不下降为依据，仍有单setting下降。选定36组历史checkpoint和曲线位于 `output/text_guided_visual_semantic_distill_grid_seed123/lambda_0.1_tau_0.5`，完整历史统计见all_results_report.md、all_results_detailed.csv、all_settings_summary.csv。
-
 ## Class-conditioned Visual Prompt（CVP）
 
-CVP 是独立的视觉类别条件实验，`TRAINER.CVP.ENABLED` 默认 False，与 Semantic Distill 同时开启会报错。现有普通视觉 forward、Original TKE 和 Semantic KL 分支保持不变。新增 `ClassConditionedVisualPrompt` 复用文本编码器的冻结 Mean-50 `class_prior b_c∈R^512`，输入 detach，计算 `P_c^V=g_v(b_c)∈R^(4×768)`；Image MLP 为 Linear(512,128)→QuickGELU→Linear(128,3072)，共有461,952个新参数，不新增 Text MLP。
+CoOpVPT 训练损失为 `L=CE(logits, label)`；普通 VPT/TCP 与 CVP 均使用这一损失，返回 `loss` 和 `loss_ce`。
+
+CVP 是独立的视觉类别条件实验，`TRAINER.CVP.ENABLED` 默认 False。现有普通视觉 forward 和 Original TKE 保持不变。新增 `ClassConditionedVisualPrompt` 复用文本编码器的冻结 Mean-50 `class_prior b_c∈R^512`，输入 detach，计算 `P_c^V=g_v(b_c)∈R^(4×768)`；Image MLP 为 Linear(512,128)→QuickGELU→Linear(128,3072)，共有461,952个新参数，不新增 Text MLP。
 
 `TimmViTVisualPromptEncoder.forward_with_class_prompt(image, class_prompt_tokens, insert_layer=7, fusion_weight=0.5)` 接收 `[B,3,H,W]` 与 `[B,4,768]`。代码block0–6继续原 Visual Deep Prompt；block7（论文/图中第8个Block）执行前计算 `Q_c^V=0.5·P_7^V+0.5·g_v(b_c)`，用融合结果替换4个prompt slots。其中 `P_7^V` 是原Visual Deep Prompt在layer7的可训练参数，不是layer6输出的隐藏状态；`b_c` 是与文本MLP共享的冻结Mean-50类别prior。block8–11不再次覆盖，最后删除slots并沿用原pooling/projection。普通Visual Deep Prompt的layer0–7均接收梯度，layer8–11的参数切片梯度为零。文本端同样为 `Q_c^T=0.5·P_7^T+0.5·g_t(b_c)`；两端MLP各自独立。
 
 `CVPCustomCLIP` 训练、验证和测试均遍历所有候选类别，输出 `v:[B,C,512]`；文本端仍用现有Original TKE得到 `t:[C,512]`。`z_ic=exp(s)·normalize(v_ic)^T normalize(t_c)`，以 `einsum("bcd,cd->bc")` 得到 `[B,C]`，GT仅用于 `cross_entropy(z,y)`，不添加任何额外loss。CoOp context、Visual/Text Deep Prompt、Original TKE和Image MLP共同训练；backbone、description bank、class prior和logit_scale冻结。
 
-默认配置为 `CVP.ENABLED=False, INSERT_LAYER=7, NUM_TOKENS=4, BOTTLENECK_DIM=128, FUSION_WEIGHT=0.5`。文本TCP与视觉CVP的配置、模块构造和CVP运行/评估入口默认fusion均为0.5；显式传入1.0仍支持历史直接替换。当前独立训练/测试入口显式设置CVP/TCP开启、Semantic关闭、两端layer7、两端 `FUSION_WEIGHT=0.5`。checkpoint仅开启时含 `cvp.*` 参数；独立 `cvp_enabled/cvp_insert_layer/cvp_num_tokens/cvp_bottleneck_dim/cvp_fusion_weight` 元数据用于拒绝CVP/non-CVP及视觉融合权重错配。历史无CVP元数据的checkpoint按non-CVP加载；历史CVP checkpoint缺少 `cvp_fusion_weight` 时按1.0处理，不能加载到当前0.5融合实验。
+默认配置为 `CVP.ENABLED=False, INSERT_LAYER=7, NUM_TOKENS=4, BOTTLENECK_DIM=128, FUSION_WEIGHT=0.5`。文本TCP与视觉CVP的配置、模块构造和CVP运行/评估入口默认fusion均为0.5；显式传入1.0仍支持历史直接替换。当前独立训练/测试入口显式设置CVP/TCP开启、两端layer7、两端 `FUSION_WEIGHT=0.5`。checkpoint仅开启时含 `cvp.*` 参数；独立 `cvp_enabled/cvp_insert_layer/cvp_num_tokens/cvp_bottleneck_dim/cvp_fusion_weight` 元数据用于拒绝CVP/non-CVP及视觉融合权重错配。历史无CVP元数据的checkpoint按non-CVP加载；历史CVP checkpoint缺少 `cvp_fusion_weight` 时按1.0处理，不能加载到当前0.5融合实验。
 
 运行 `PYTHONPATH=. HF_HUB_OFFLINE=1 CUDA_VISIBLE_DEVICES=1 /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop/bin/python -m scripts.validate_cvp`，依次检查三数据集真实小batch梯度、特征形状、labels独立性、checkpoint往返及正式batch32单步显存和耗时。验证完成后运行 `PYTHONPATH=. /mnt/nas1/disk09/yuejianwu/.conda/envs/biocoop/bin/python -m scripts.run_cvp`。
 

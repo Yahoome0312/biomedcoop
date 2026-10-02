@@ -47,10 +47,9 @@ def run_case(gpu, case, insert_layer=7, output_dir=None, cvp_fusion_weight=0.5):
     opts = ["DATASET.NUM_SHOTS", str(shots), "TEST.SKIP_FINAL_TEST", "True",
             "TEST.SAVE_BEST_METRICS", "['accuracy']", "TRAINER.TCP.INSERT_LAYER", str(insert_layer)]
     if not is_coop:
-        opts += ["TRAINER.TCP.ENABLED", str(method in ("class_text_token", "fusion", "semantic_distill", "cvp")),
+        opts += ["TRAINER.TCP.ENABLED", str(method in ("class_text_token", "fusion", "cvp")),
                  "TRAINER.TCP.FUSION_WEIGHT",
-                 "0.5" if method in ("fusion", "semantic_distill", "cvp") else "1.0"]
-    opts += ["TRAINER.SEMANTIC_DISTILL.ENABLED", str(method == "semantic_distill")]
+                 "0.5" if method in ("fusion", "cvp") else "1.0"]
     if method == "cvp":
         opts += ["TRAINER.CVP.ENABLED", "True", "TRAINER.CVP.INSERT_LAYER", "7",
                  "TRAINER.CVP.NUM_TOKENS", "4", "TRAINER.CVP.BOTTLENECK_DIM", "128",

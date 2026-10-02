@@ -28,8 +28,7 @@ def main():
             opts=['DATASET.NUM_SHOTS', '32', 'TRAINER.CVP.ENABLED', 'True',
                   'TRAINER.CVP.INSERT_LAYER', '7', 'TRAINER.CVP.NUM_TOKENS', '4',
                   'TRAINER.CVP.BOTTLENECK_DIM', '128', 'TRAINER.CVP.FUSION_WEIGHT', '0.5', 'TRAINER.TCP.ENABLED', 'True',
-                  'TRAINER.TCP.INSERT_LAYER', '7', 'TRAINER.TCP.FUSION_WEIGHT', '0.5',
-                  'TRAINER.SEMANTIC_DISTILL.ENABLED', 'False'])
+                  'TRAINER.TCP.INSERT_LAYER', '7', 'TRAINER.TCP.FUSION_WEIGHT', '0.5'])
         cfg = train.setup_cfg(args)
         # Only the validation loader avoids worker startup; formal batches remain 32.
         cfg.defrost()
@@ -69,7 +68,7 @@ def main():
             torch.testing.assert_close(output1, output2, rtol=0, atol=0)
         trainer.save_model(0, cfg.OUTPUT_DIR)
         checkpoint = trainer.load_model(cfg.OUTPUT_DIR, epoch=1)
-        assert checkpoint['cvp_enabled'] and not checkpoint['semantic_distill']['ENABLED']
+        assert checkpoint['cvp_enabled']
         assert checkpoint['cvp_fusion_weight'] == checkpoint['fusion_weight'] == .5
         with torch.no_grad():
             torch.testing.assert_close(logits, model(images), rtol=0, atol=0)

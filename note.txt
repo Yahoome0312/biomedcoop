@@ -137,3 +137,5 @@
 [2026-09-29 CVP] 真实三数据集小batch反向、全部训练分支与冻结边界、batch32、checkpoint往返检查通过。GPU1/2/6/7单槽队列36组完成、无失败，按validation accuracy选模后独立test；12-setting等权CVP75.4276%、文本0.5fusion baseline75.6111%，Δ−0.1835pp，7升0平5降。seed4/5补充的10组结果保留，用户指定五选三汇报单独保存，补跑专用代码已撤回。
 [2026-09-29 CVP/default fusion] 按用户指令将TCP/CVP配置、文本/视觉模块和CVP训练/评估入口的默认fusion统一为0.5，显式1.0保留历史替换方式，历史checkpoint缺失视觉fusion字段仍按1.0解释。将四个Semantic文件移出暂存，工作区内容保留；混合脚本仅暂存CVP与默认fusion相关部分，README/note暂存仅CVP新增内容，其他诊断与early-stop修改留在工作区。更新默认融合测试并将历史直接替换测试显式设置1.0。
 [2026-09-29 CVP/default fusion验证] 工作区全量回归89 passed/1 skipped；单独导出暂存区版本验证58 passed/1 skipped，确保未暂存的Semantic/early-stop修改没有掩盖本次提交问题。暂存格式检查通过，最终13文件仅包含CVP及默认fusion0.5修改，四个指定Semantic文件与其他混合修改保留在工作区；未创建提交。
+
+[2026-10-03] 按用户确认删除 ver17 引入并在后续版本扩展的 CoOpVPT Semantic KL 分支：移除训练 loss_sem、梯度审计/监控、配置、checkpoint 元数据与续训校验、专用实验/验证脚本及相关测试；训练恢复单一 CE 损失，CVP 与普通 VPT/TCP 继续使用原前向。同步清理通用训练/评估入口与 CVP 对 Semantic 的依赖，更新 README_CN。BiomedCoOp KDSP 和历史 ProGrad 保留，历史实验产物未改动。

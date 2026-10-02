@@ -242,7 +242,7 @@ def main(jobs_per_gpu=1, previous_manager=None):
     experiments.write_json(OUT / "_manager/plan.json", dict(
         cases=experiments.CASES, gpus=experiments.GPUS, baseline=str(BASELINE),
         cvp_enabled=True, cvp_insert_layer=7, cvp_num_tokens=4,
-        cvp_bottleneck_dim=128, fusion_weight=0.5, cvp_fusion_weight=VISUAL_FUSION_WEIGHT, semantic_enabled=False,
+        cvp_bottleneck_dim=128, fusion_weight=0.5, cvp_fusion_weight=VISUAL_FUSION_WEIGHT,
         jobs_per_gpu=jobs_per_gpu))
     if jobs_per_gpu == 1 and previous_manager is None:
         experiments.main()
@@ -267,8 +267,6 @@ def main(jobs_per_gpu=1, previous_manager=None):
         if checkpoint["epoch"] != selected["epoch"] or any(
                 checkpoint[field] != metrics[field] for field in fields):
             raise RuntimeError(f"CVP saved checkpoint metadata mismatch: {dest}")
-        if checkpoint["semantic_distill"]["ENABLED"]:
-            raise RuntimeError(f"CVP checkpoint unexpectedly enabled Semantic Distill: {dest}")
     summarize()
     experiments.write_json(OUT / "_manager/final_validation.json", dict(
         completed=36, settings=12, checkpoint_selection_verified=True,
